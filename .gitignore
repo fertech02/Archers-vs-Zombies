@@ -22,3 +22,4 @@ Thumbs.db
 # Dataset
 zombie_dataset/
 results/
+zombie_detection/sim_results

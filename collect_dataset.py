@@ -9,7 +9,8 @@ import os
 import pickle
 import numpy as np
 from PIL import Image
-from pettingzoo.butterfly import knights_archers_zombies_v10
+
+from utils import create_environment
 
 
 def get_zombie_boxes(env):
@@ -55,18 +56,25 @@ def load_dataset(save_dir="zombie_dataset"):
 
 
 def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
-            frame_size=(320, 180), save_every=10):
+            frame_size=(320, 180), save_every=10, distortion_level=5):
     """
-    frame_size : (width, height) to resize frames — reduces per-frame memory 16x
-                 vs the native 1280x720.
-    save_every  : flush a chunk to disk every N episodes to keep RAM bounded.
+    frame_size       : (width, height) to resize frames — reduces per-frame memory 16x
+                       vs the native 1280x720.
+    save_every       : flush a chunk to disk every N episodes to keep RAM bounded.
+    distortion_level : visual distortion applied during collection (match eval default=5).
     """
     os.makedirs(save_dir, exist_ok=True)
     frames_buf, labels_buf = [], []
     chunk_idx = 0
     total_frames = 0
 
-    env = knights_archers_zombies_v10.env(render_mode="rgb_array", max_cycles=max_steps)
+    env = create_environment(
+        max_cycles=max_steps,
+        render_mode="rgb_array",
+        distortion_level=distortion_level,
+    )
+
+    first_agent = env.possible_agents[0]
 
     for ep in range(n_episodes):
         env.reset(seed=ep)
@@ -76,7 +84,7 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
             done = term or trunc
             env.step(None if done else env.action_space(agent).sample())
 
-            if agent == (env.agents[0] if env.agents else None):
+            if agent == first_agent:
                 raw = env.render()                              # (H, W, 3) uint8
                 frame = np.array(
                     Image.fromarray(raw).resize(frame_size, Image.BILINEAR),

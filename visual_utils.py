@@ -446,7 +446,6 @@ class VisualWrapper(BaseWrapper):
         if self.render_mode == "human":
             self._show()
             return None
-        return self._frame_hwc()
 
     def close(self):
         try:

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-CNN_INPUT_SIZE = (84, 84)   # (H, W) expected by ZombieCNN
+CNN_INPUT_SIZE = (90, 160)  # (H, W) expected by ZombieCNN — aspect-preserving 16:9
 
 
 def preprocess_obs(obs: np.ndarray, input_size: tuple = CNN_INPUT_SIZE) -> torch.Tensor:

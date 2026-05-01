@@ -23,7 +23,7 @@ from zombie_detection.cnn import MAX_ZOMBIES
 DATASET_FRAME_WH = (320, 180)
 
 # CNN input size (H, W)
-CNN_INPUT_SIZE = (84, 84)
+CNN_INPUT_SIZE = (90, 160)
 
 
 class ZombieDataset(Dataset):

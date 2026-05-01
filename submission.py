@@ -43,7 +43,7 @@ class CustomZombieDetectorFunction(Callable):
 
     def __init__(self, env: gymnasium.Env):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = ZombieCNN(input_shape=(3, 84, 84))
+        self.model = ZombieCNN(input_shape=(3, 90, 160))
         self.model.load_state_dict(torch.load(_MODEL_PATH, map_location=self.device))
         self.model.to(self.device)
         self.model.eval()
@@ -55,6 +55,12 @@ class CustomZombieDetectorFunction(Callable):
         likely to least likely positions. The evaluation uses the first k
         items if there are k zombies on the screen.
         """
+        if observation.ndim == 1:
+            # flat (H*W*3,) uint8 — reshape assuming 16:9 and 3 channels
+            n_pixels = observation.size // 3
+            orig_h = int((n_pixels * 9 / 16) ** 0.5)
+            orig_w = n_pixels // orig_h
+            observation = observation.reshape(orig_h, orig_w, 3)
         orig_h, orig_w = observation.shape[:2]
         tensor = preprocess_obs(observation).to(self.device)
 

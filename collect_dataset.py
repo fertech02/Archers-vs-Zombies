@@ -14,12 +14,13 @@ from utils import create_environment
 
 
 def get_zombie_boxes(env):
-    """Extract zombie bounding boxes from the game's sprite list."""
+    """Extract zombie bounding boxes from the game's sprite list, sorted by x."""
     game = env.unwrapped
     boxes = []
     for z in game.zombie_list:
         r = z.rect
         boxes.append([r.x, r.y, r.width, r.height])
+    boxes.sort(key=lambda b: b[0])
     return np.array(boxes, dtype=np.float32).reshape(-1, 4)
 
 

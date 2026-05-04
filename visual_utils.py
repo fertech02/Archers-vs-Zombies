@@ -443,6 +443,8 @@ class VisualWrapper(BaseWrapper):
     def render(self):
         # Optional explicit render: refresh and show/return
         self._refresh_transformed_frame(force=True)
+        if self.render_mode == "rgb_array" and self._frame_whc is not None:
+            return np.swapaxes(self._frame_whc, 0, 1)  # (W,H,3) -> (H,W,3)
         if self.render_mode == "human":
             self._show()
             return None

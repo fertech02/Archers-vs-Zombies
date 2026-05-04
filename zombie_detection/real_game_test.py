@@ -1,3 +1,4 @@
+
 """
 Test ZombieCNN on REAL game frames from the KAZ environment.
 
@@ -130,7 +131,7 @@ def run(n_frames=12, conf_threshold=0.5, iou_threshold=0.3, seed=42):
         print(f"[ERROR] Weights not found at {WEIGHTS_PATH}")
         return
 
-    model = ZombieCNN(input_shape=(3, 84, 84)).to(device)
+    model = ZombieCNN(input_shape=(3, 90, 160)).to(device)
     model.load_state_dict(torch.load(WEIGHTS_PATH, map_location=device))
     model.eval()
     print(f"Model loaded from {WEIGHTS_PATH}")

@@ -50,7 +50,7 @@ class CustomZombieDetectorFunction(Callable):
 
     def __call__(self, observation, *args, **kwargs):
         """Returns a matrix of shape (nb_zombies, nb_attributes), where
-        the attributes are defining a rectangle with (x,y,width,heigh) and
+        the attributes are defining a rectangle with (x,y,width,height) and
         indicate where the zombies are. The zombies are ordered from most
         likely to least likely positions. The evaluation uses the first k
         items if there are k zombies on the screen.

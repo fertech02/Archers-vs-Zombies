@@ -31,8 +31,12 @@ from zombie_detection.dataset import ZombieDataset
 SAVE_PATH = os.path.join(os.path.dirname(__file__), "zombie_cnn.pth")
 
 # Loss hyper-parameters
-LAMBDA_BBOX     = 5.0   # weight for bbox regression vs confidence loss
-LAMBDA_CONF_POS = 1.0   # neutral: equal weight for positive and negative slots
+# Dataset: ~2.4 zombies / 8 slots → 70% negative slots.
+# Zombie boxes are ~2% of frame width when normalized → smooth_l1 gradients are
+# tiny. LAMBDA_BBOX=50 compensates; bbox head uses raw linear (no sigmoid) to
+# keep gradients full-scale.
+LAMBDA_BBOX     = 50.0  # high weight needed for tiny normalized box targets (~0.02)
+LAMBDA_CONF_POS = 5.0   # up-weight positive slots: ~70/30 negative/positive ratio
 
 
 # ── Fixed-slot detection loss ─────────────────────────────────────────────────
@@ -178,6 +182,7 @@ def train(
         # validation
         model.eval()
         val_loss = 0.0
+        val_tp = val_fp = val_fn = 0
         with torch.no_grad():
             for frames_b, targets_b in val_loader:
                 frames_b  = frames_b.to(device)
@@ -185,9 +190,20 @@ def train(
                 preds     = model(frames_b)
                 val_loss += detection_loss(preds, targets_b).item()
 
+                # slot-level confidence accuracy (threshold 0.5)
+                conf_pred = (preds[:, :, 0] >= 0.5)
+                conf_gt   = (targets_b[:, :, 0] > 0.5)
+                val_tp += (conf_pred &  conf_gt).sum().item()
+                val_fp += (conf_pred & ~conf_gt).sum().item()
+                val_fn += (~conf_pred & conf_gt).sum().item()
+
         train_loss /= max(1, n_valid)
         val_loss   /= len(val_loader)
         scheduler.step()
+
+        prec = val_tp / (val_tp + val_fp) if (val_tp + val_fp) > 0 else 0.0
+        rec  = val_tp / (val_tp + val_fn) if (val_tp + val_fn) > 0 else 0.0
+        f1   = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
 
         cur_lr = optimizer.param_groups[0]["lr"]
         saved  = ""
@@ -198,7 +214,8 @@ def train(
 
         print(
             f"Epoch {epoch:3d}/{epochs}  lr={cur_lr:.2e}  "
-            f"train={train_loss:.4f}  val={val_loss:.4f}{saved}"
+            f"train={train_loss:.4f}  val={val_loss:.4f}  "
+            f"P={prec:.2f} R={rec:.2f} F1={f1:.2f}{saved}"
         )
 
     print(f"\nDone. Best val loss: {best_val:.4f}  |  Weights: {save_path}")
@@ -207,7 +224,7 @@ def train(
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs",     type=int,   default=20)
+    parser.add_argument("--epochs",     type=int,   default=50)
     parser.add_argument("--batch_size", type=int,   default=64)
     parser.add_argument("--lr",         type=float, default=5e-4)
     args = parser.parse_args()

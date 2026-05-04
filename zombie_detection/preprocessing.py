@@ -45,6 +45,7 @@ def decode_detections(
         Returns shape (0, 4) when no zombie is detected.
     """
     preds_np = preds[0].detach().cpu().numpy()   # (MAX_ZOMBIES, 5)
+    preds_np[:, 1:] = preds_np[:, 1:].clip(0.0, 1.0)   # bbox head is linear (no sigmoid)
     mask     = preds_np[:, 0] >= conf_threshold
     detected = preds_np[mask]
 

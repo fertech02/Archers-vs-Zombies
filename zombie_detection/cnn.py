@@ -2,10 +2,10 @@
 Shared CNN backbone for zombie detection and RL feature extraction.
 
 Architecture:
-  backbone (Conv layers) → fc → 512-dim feature vector
-                                       ↓
-                            detection_head → (MAX_ZOMBIES, 5)
-                                             (confidence, x, y, w, h) normalized [0,1]
+  backbone (Conv + BN layers) → fc → 512-dim feature vector
+                                              ↓
+                                   detection_head → (MAX_ZOMBIES, 5)
+                                                    (confidence, x, y, w, h) normalized [0,1]
 
 The 512-dim feature vector is also used by the RLlib policy/value heads.
 """
@@ -17,7 +17,7 @@ MAX_ZOMBIES = 8
 
 class ZombieCNN(nn.Module):
 
-    def __init__(self, input_shape: tuple = (3, 84, 84)):
+    def __init__(self, input_shape: tuple = (3, 90, 160)):
         """
         Args:
             input_shape: (C, H, W) of the preprocessed input frame.
@@ -25,10 +25,13 @@ class ZombieCNN(nn.Module):
         super().__init__()
         C, H, W = input_shape
 
+        # Gentle strides preserve spatial structure for detection on small frames.
+        # BatchNorm after every conv for training stability.
         self.backbone = nn.Sequential(
-            nn.Conv2d(C, 32, kernel_size=8, stride=4), nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2), nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1), nn.ReLU(),
+            nn.Conv2d(C,  32, kernel_size=5, stride=2, padding=2), nn.BatchNorm2d(32),  nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1), nn.BatchNorm2d(64),  nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1), nn.BatchNorm2d(64),  nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1), nn.BatchNorm2d(64),  nn.ReLU(),
             nn.Flatten(),
         )
 
@@ -38,6 +41,7 @@ class ZombieCNN(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(_flat, 512),
             nn.ReLU(),
+            nn.Dropout(0.3),
         )
         self.feat_size = 512
 
@@ -63,5 +67,8 @@ class ZombieCNN(nn.Module):
         feats = self.extract_features(x)
         raw = self.detection_head(feats).view(-1, MAX_ZOMBIES, 5)
         conf = torch.sigmoid(raw[:, :, 0:1])
-        bbox = torch.sigmoid(raw[:, :, 1:])
+        # No sigmoid on bbox: sigmoid squashes gradients to ~0.02x for small
+        # normalized targets (~0.02-0.04), starving bbox regression.
+        # Raw linear output; clamped to [0,1] at inference (see preprocessing.py).
+        bbox = raw[:, :, 1:]
         return torch.cat([conf, bbox], dim=-1)

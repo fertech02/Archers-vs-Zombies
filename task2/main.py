@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from MatrixGame import StagHunt
+from MatrixGame import StagHunt, SubsidyGame, PrisonerDilemma, BiasedRockPaperScissor
 from EpsilonAgent import EpsilonGreedyAgent
 from BoltzmannAgent import BoltzmannAgent
 from LenientAgent import LenientBoltzmannAgent
@@ -24,6 +24,8 @@ from Plot import (
 
 N_EPISODES = 10_000
 SEED = 42
+
+GAMES = [StagHunt(), SubsidyGame(), PrisonerDilemma(), BiasedRockPaperScissor()]
 
 
 def make_agents(kind: str, n_actions: int):
@@ -57,48 +59,55 @@ def make_agents(kind: str, n_actions: int):
         raise ValueError(f"Unknown algorithm: {kind}")
 
 
-if __name__ == "__main__":
-    game = StagHunt()
-    print(game)
-    print()
+def slug(name: str) -> str:
+    return name.lower().replace("'", "").replace(" ", "_").replace("-", "_")
 
+
+if __name__ == "__main__":
     algorithms = {
         "ε-greedy":          "epsilon_greedy",
         "Boltzmann":         "boltzmann",
         "Lenient Boltzmann": "lenient_boltzmann",
     }
 
-    all_histories = {}
+    for game in GAMES:
+        print("\n" + "#" * 60)
+        print(f"# Game: {game.name}")
+        print("#" * 60)
+        print(game)
+        print()
 
-    for label, kind in algorithms.items():
-        print(f"Running: {label}")
-        a1, a2 = make_agents(kind, game.n_actions)
-        cfg = TrainConfig(n_episodes=N_EPISODES, seed=SEED)
-        history = train(game, a1, a2, cfg)
-        stats = convergence_stats(history, game, window=200)
-        print_summary(stats, game)
-        all_histories[label] = history
+        all_histories = {}
+        gslug = slug(game.name)
 
-        # Per-algorithm plots
-        plot_q_values(
-            history, game, agent_idx=1, save=True,
-            filename=f"q_values_{kind}.png",
+        for label, kind in algorithms.items():
+            print(f"Running: {label}")
+            a1, a2 = make_agents(kind, game.n_actions)
+            cfg = TrainConfig(n_episodes=N_EPISODES, seed=SEED)
+            history = train(game, a1, a2, cfg)
+            stats = convergence_stats(history, game, window=200)
+            print_summary(stats, game)
+            all_histories[label] = history
+
+            plot_q_values(
+                history, game, agent_idx=1, save=True,
+                filename=f"q_values_{gslug}_{kind}.png",
+            )
+            if game.n_actions == 2:
+                plot_replicator_with_traces(
+                    {label: history}, game, n_grid=20, save=True,
+                    filename=f"replicator_{gslug}_{kind}.png",
+                )
+
+        plot_learning_trajectories(
+            all_histories, game, window=200, save=True,
+            filename=f"trajectories_{gslug}.png",
         )
-        plot_replicator_with_traces(
-            {label: history}, game, n_grid=20, save=True,
-            filename=f"replicator_{kind}.png",
-        )
 
-    # Combined trajectory plot (all 3 algorithms, one subplot each)
-    plot_learning_trajectories(
-        all_histories, game, window=200, save=True,
-        filename="all_algorithms_trajectories.png",
-    )
-
-    # Combined replicator plot (all 3 traces on one field)
-    plot_replicator_with_traces(
-        all_histories, game, n_grid=20, save=True,
-        filename="replicator_all_algorithms.png",
-    )
+        if game.n_actions == 2:
+            plot_replicator_with_traces(
+                all_histories, game, n_grid=20, save=True,
+                filename=f"replicator_{gslug}_all.png",
+            )
 
     print("Done. Plots saved in results/plots/")

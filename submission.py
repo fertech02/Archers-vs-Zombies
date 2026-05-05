@@ -1,24 +1,44 @@
 import os
+from pathlib import Path
 from typing import Callable
 
 import gymnasium
+import numpy as np
 import torch
 from pettingzoo.utils import BaseWrapper
 from pettingzoo.utils.env import AgentID, ObsType
 
 from zombie_detection.cnn import ZombieCNN
 from zombie_detection.preprocessing import decode_detections, preprocess_obs
+from zombie_detection.rllib_model import KAZVisionModel
 
-_MODEL_PATH = os.path.join(os.path.dirname(__file__), "zombie_detection", "zombie_cnn.pth")
+_HERE = Path(os.path.dirname(os.path.abspath(__file__)))
+_MODEL_PATH = _HERE / "zombie_detection" / "zombie_cnn.pth"
+_CHECKPOINT_ROOT = _HERE / "results" / "ppo_kaz" / "kaz_ppo"
 
 _ZOMBIE_W_NORM = 7.25 / 320
 _ZOMBIE_H_NORM = 7.75 / 180
 
+# Tells the evaluation harness how to build the env.
+ENV_SETTINGS = {
+    "frame_stack": 4,
+    "distortion_level": 5,
+}
+
+
+def _find_latest_checkpoint() -> Path:
+    candidates = sorted(
+        _CHECKPOINT_ROOT.glob("PPO_kaz_*/checkpoint_*"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise FileNotFoundError(f"No PPO checkpoint under {_CHECKPOINT_ROOT}")
+    return candidates[0].resolve()
+
 
 class CustomWrapper(BaseWrapper):
-    """
-    Wrapper to use to add state pre-processing (feature engineering)
-    """
+    """Identity wrapper — env_settings already give the obs shape the policy expects."""
 
     def observation_space(self, agent: AgentID) -> gymnasium.spaces.Space:
         return self.env.observation_space(agent)
@@ -28,35 +48,35 @@ class CustomWrapper(BaseWrapper):
 
 
 class CustomPredictFunction(Callable):
-    """Function to use to load the trained model and predict the action"""
+    """Loads the trained PPO policy (old RLlib API stack) and predicts actions."""
+
     def __init__(self, env):
-        ckpt = (Path(os.path.dirname(os.path.abspath(__file__)))
-                / "results" / "ppo_kaz" / "<run_dir>" / "checkpoint_xxx"
-                / "learner_group" / "learner" / "rl_module").resolve()
-        self.modules = MultiRLModule.from_checkpoint(ckpt)
+        from ray.rllib.models import ModelCatalog
+        from ray.rllib.policy.policy import Policy
+
+        ModelCatalog.register_custom_model("kaz_vision", KAZVisionModel)
+
+        ckpt = _find_latest_checkpoint()
+        policy_dir = ckpt / "policies" / "default_policy"
+        loaded = Policy.from_checkpoint(str(policy_dir if policy_dir.is_dir() else ckpt))
+        self.policy = loaded["default_policy"] if isinstance(loaded, dict) else loaded
 
     def __call__(self, observation, agent, *args, **kwargs):
-        rl_module = self.modules[agent]  # "shared_policy" è condivisa
-        fwd_in = {"obs": torch.Tensor(observation).unsqueeze(0)}
-        out = rl_module.forward_inference(fwd_in)
-        dist_cls = rl_module.get_inference_action_dist_cls()
-        return dist_cls.from_logits(out["action_dist_inputs"]).sample()[0].numpy()
+        action, _, _ = self.policy.compute_single_action(observation, explore=False)
+        return action
 
 
 class CustomZombieDetectorFunction(Callable):
-    """Function to use to load the trained model and predict where
-    the zombies are.
-    """
+    """Pretrained ZombieCNN detection head."""
 
     def __init__(self, env: gymnasium.Env):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = ZombieCNN(input_shape=(3, 90, 160))
-        self.model.load_state_dict(torch.load(_MODEL_PATH, map_location=self.device))
+        self.model.load_state_dict(torch.load(str(_MODEL_PATH), map_location=self.device))
         self.model.to(self.device)
         self.model.eval()
 
     def __call__(self, observation, *args, **kwargs):
-
         if observation.ndim == 1:
             n_pixels = observation.size // 3
             orig_h = int((n_pixels * 9 / 16) ** 0.5)

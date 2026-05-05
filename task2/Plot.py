@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-SAVE_DIR = Path("results/plots")
+SAVE_DIR = Path(__file__).parent / "results" / "plots"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -70,9 +70,10 @@ def plot_q_values(
     episodes = np.arange(n)
 
     fig, ax = plt.subplots(figsize=(7, 3.5))
-    colors = ["#378ADD", "#D85A30"]
+    colors = ["#378ADD", "#D85A30", "#3B6D11", "#993556", "#7B4FBF"]
     for a in range(game.n_actions):
-        ax.plot(episodes, Q[:, a], color=colors[a], label=f"Q[{game.action_name(a)}]", linewidth=1.5)
+        ax.plot(episodes, Q[:, a], color=colors[a % len(colors)],
+                label=f"Q[{game.action_name(a)}]", linewidth=1.5)
 
     ax.set_title(f"{game.name} — Q-values Player {agent_idx}", fontsize=11)
     ax.set_xlabel("Episode")

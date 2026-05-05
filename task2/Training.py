@@ -57,10 +57,29 @@ def run_episode(
     return a1, a2, r1, r2
 
 
+def _exploration_param(agent) -> float:
+    """Read the agent's current exploration parameter (ε for ε-greedy, τ for Boltzmann)."""
+    if hasattr(agent, "eps_current"):
+        return agent.eps_current
+    if hasattr(agent, "tau_current"):
+        return agent.tau_current
+    return 0.0
+
+
+def _decay(agent) -> None:
+    """Call whichever decay method the agent exposes."""
+    if hasattr(agent, "decay_epsilon"):
+        agent.decay_epsilon()
+    elif hasattr(agent, "decay_tau"):
+        agent.decay_tau()
+    elif hasattr(agent, "decay"):
+        agent.decay()
+
+
 def train(
     game: MatrixGame,
-    agent1: EpsilonGreedyAgent,
-    agent2: EpsilonGreedyAgent,
+    agent1,
+    agent2,
     cfg: TrainConfig = TrainConfig(),
 ) -> RunHistory:
 
@@ -72,9 +91,9 @@ def train(
 
     for ep in range(cfg.n_episodes):
         a1, a2, r1, r2 = run_episode(game, agent1, agent2)
-        history.append(a1, a2, r1, r2, agent1.Q, agent2.Q, agent1.eps_current)
-        agent1.decay_epsilon()
-        agent2.decay_epsilon()
+        history.append(a1, a2, r1, r2, agent1.Q, agent2.Q, _exploration_param(agent1))
+        _decay(agent1)
+        _decay(agent2)
 
     return history
 

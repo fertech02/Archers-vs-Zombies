@@ -11,11 +11,11 @@ from pettingzoo.utils import aec_to_parallel
 from utils import create_environment
 from zombie_detection.rllib_model import KAZVisionModel
 
-HERE           = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.abspath(__file__))
 CNN_CHECKPOINT = os.path.join(HERE, "zombie_detection", "zombie_cnn.pth")
-RESULTS_DIR    = os.path.join(HERE, "results", "ppo_kaz")
+RESULTS_DIR = os.path.join(HERE, "results", "ppo_kaz")
 
-DISTORTION  = 0
+DISTORTION = 0
 FRAME_STACK = 4
 
 
@@ -32,15 +32,16 @@ def make_env():
 def main():
     ray.init(
         ignore_reinit_error=True,
-        runtime_env={"working_dir": os.path.dirname(os.path.abspath(__file__))},
-        log_to_driver=True,
+        runtime_env={
+            "working_dir": os.path.dirname(os.path.abspath(__file__)),
+            "excludes": ["results", ".git", "__pycache__", "*.pth"]  # Escludi i pesi qui
+        }
     )
-
     register_env("kaz", lambda _: make_env())
     ModelCatalog.register_custom_model("kaz_vision", KAZVisionModel)
 
     tmp_env = make_env()
-    obs_space    = tmp_env.observation_space
+    obs_space = tmp_env.observation_space
     action_space = tmp_env.action_space
     tmp_env.close()
 
@@ -51,34 +52,28 @@ def main():
             enable_env_runner_and_connector_v2=False,
         )
         .environment("kaz")
-        .framework("torch")
-        .env_runners(num_env_runners=2, rollout_fragment_length=128)
+        .env_runners(
+            num_env_runners=8,  # Scendiamo a 8 per salvare la RAM
+            num_envs_per_env_runner=1,
+            rollout_fragment_length="auto",
+        )
         .training(
+            train_batch_size=2048,  # Dimensione bilanciata per 8 worker
+            minibatch_size=128,
+            num_epochs=10,
             model={
                 "custom_model": "kaz_vision",
                 "custom_model_config": {
                     "cnn_checkpoint": CNN_CHECKPOINT,
-                    "frame_stack":    FRAME_STACK,
+
+                    "frame_stack": 4,
                 },
-            },
-            train_batch_size=2048,
-            minibatch_size=256,
-            num_epochs=10,
-            lr=3e-4,
-            gamma=0.99,
-            lambda_=0.95,
-            clip_param=0.2,
-            vf_loss_coeff=0.5,
-            entropy_coeff=0.01,
-            grad_clip=0.5
+            }
         )
-        .multi_agent(
-            policies={
-                "shared_policy": (None, obs_space, action_space, {})
-            },
-            policy_mapping_fn=lambda agent_id, *args, **kwargs: "shared_policy",
+        .resources(
+            num_cpus_for_main_process=2,  # Lascia spazio al driver
         )
-        .resources(num_gpus=int(os.environ.get("NUM_GPUS", 0)))
+        .framework("torch")
     )
 
     tune.run(

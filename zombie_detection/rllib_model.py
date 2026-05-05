@@ -1,22 +1,3 @@
-"""
-RLlib TorchModelV2 that wraps ZombieCNN as a visual feature extractor.
-
-The CNN backbone extracts a 512-dim feature vector from each pixel observation.
-That vector feeds into separate policy and value heads (for PPO / actor-critic).
-
-Registration example (in your training script):
-    from ray.rllib.models import ModelCatalog
-    from zombie_detection.rllib_model import KAZVisionModel
-    ModelCatalog.register_custom_model("kaz_vision", KAZVisionModel)
-
-Then in the algorithm config:
-    .training(model={
-        "custom_model": "kaz_vision",
-        "custom_model_config": {
-            "cnn_checkpoint": "zombie_detection/zombie_cnn.pth",  # optional
-        },
-    })
-"""
 import os
 import torch
 import torch.nn as nn
@@ -27,42 +8,66 @@ from zombie_detection.preprocessing import CNN_INPUT_SIZE
 
 
 class KAZVisionModel(TorchModelV2, nn.Module):
-    """
-    Pixel observation → CNN backbone → 512-dim features → policy / value heads.
-
-    The CNN can optionally be initialised from a checkpoint trained on the
-    zombie detection task (see zombie_detection/train.py).
-    """
 
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
+
         TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config, name)
         nn.Module.__init__(self)
 
         custom_cfg = model_config.get("custom_model_config", {})
 
         self.cnn = ZombieCNN(input_shape=(3, *CNN_INPUT_SIZE))
+        self._cnn_frozen = False
+        self._frame_stack = int(custom_cfg.get("frame_stack", 1))
 
         checkpoint = custom_cfg.get("cnn_checkpoint")
         if checkpoint and os.path.isfile(checkpoint):
             self.cnn.load_state_dict(torch.load(checkpoint, map_location="cpu"))
-            print(f"[KAZVisionModel] Loaded pretrained CNN from {checkpoint}")
+            for p in self.cnn.parameters():
+                p.requires_grad = False
+            self.cnn.eval()
+            self._cnn_frozen = True
+            n_frozen = sum(p.numel() for p in self.cnn.parameters())
+            print(f"[KAZVisionModel] Loaded + froze CNN from {checkpoint} "
+                  f"({n_frozen:,} parameters frozen, frame_stack={self._frame_stack})")
+        elif checkpoint:
+            print(f"[KAZVisionModel] WARNING: checkpoint not found at {checkpoint} "
+                  f"— CNN will be trained from scratch")
 
-        feat = self.cnn.feat_size          # 512
+        feat = self.cnn.feat_size * self._frame_stack
         self.policy_head = nn.Linear(feat, num_outputs)
         self.value_head  = nn.Linear(feat, 1)
-        self._features   = None            # cached for value_function()
+        self._features   = None
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if self._cnn_frozen:
+            self.cnn.eval()
+        return self
 
     def forward(self, input_dict, state, seq_lens):
-        """
-        input_dict["obs"]: (B, H, W, C) uint8 — raw environment observation
-        Returns action logits of shape (B, num_outputs).
-        """
-        obs = input_dict["obs"].float() / 255.0          # normalize to [0,1]
-        obs = obs.permute(0, 3, 1, 2)                    # (B,H,W,C) → (B,C,H,W)
+        # input obs: (B, H, W, 3*N) con N = frame_stack, layout [F0_RGB, F1_RGB, ...]
+        obs = input_dict["obs"].float() / 255.0
+        B, H, W, C = obs.shape
+        N = self._frame_stack
+        assert C == 3 * N, f"expected {3*N} channels with frame_stack={N}, got {C}"
+
+        # (B, H, W, 3*N) -> (B, 3*N, H, W) -> (B*N, 3, H, W): ogni frame diventa un'immagine
+        # indipendente nel batch. La reshape funziona perché i 3 canali RGB di ciascun frame
+        # sono contigui lungo l'asse canali.
+        obs = obs.permute(0, 3, 1, 2).contiguous().reshape(B * N, 3, H, W)
         obs = nn.functional.interpolate(
             obs, size=CNN_INPUT_SIZE, mode="bilinear", align_corners=False
         )
-        self._features = self.cnn.extract_features(obs)  # (B, 512)
+
+        if self._cnn_frozen:
+            with torch.no_grad():
+                feats = self.cnn.extract_features(obs)   # (B*N, 512)
+        else:
+            feats = self.cnn.extract_features(obs)
+
+        # concatena le feature dei N frame: (B*N, 512) -> (B, N*512)
+        self._features = feats.reshape(B, N * self.cnn.feat_size)
         return self.policy_head(self._features), state
 
     def value_function(self):

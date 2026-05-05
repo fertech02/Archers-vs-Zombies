@@ -1,5 +1,3 @@
-"""Template of your submission file for Task 3 (multi agent KAZ).
-"""
 import os
 from typing import Callable
 
@@ -13,10 +11,6 @@ from zombie_detection.preprocessing import decode_detections, preprocess_obs
 
 _MODEL_PATH = os.path.join(os.path.dirname(__file__), "zombie_detection", "zombie_cnn.pth")
 
-# Every zombie sprite in the training set has the exact same rect size
-# (7.25 x 7.75 px in 320x180 frames). The CNN learns positions well but the
-# bbox-size head underfits, so we override w,h with these constants — this is
-# the size of an actual sprite rect, not a learned prediction.
 _ZOMBIE_W_NORM = 7.25 / 320
 _ZOMBIE_H_NORM = 7.75 / 180
 
@@ -35,12 +29,18 @@ class CustomWrapper(BaseWrapper):
 
 class CustomPredictFunction(Callable):
     """Function to use to load the trained model and predict the action"""
-
-    def __init__(self, env: gymnasium.Env):
-        self.env = env
+    def __init__(self, env):
+        ckpt = (Path(os.path.dirname(os.path.abspath(__file__)))
+                / "results" / "ppo_kaz" / "<run_dir>" / "checkpoint_xxx"
+                / "learner_group" / "learner" / "rl_module").resolve()
+        self.modules = MultiRLModule.from_checkpoint(ckpt)
 
     def __call__(self, observation, agent, *args, **kwargs):
-        return self.env.action_space(agent).sample()
+        rl_module = self.modules[agent]  # "shared_policy" è condivisa
+        fwd_in = {"obs": torch.Tensor(observation).unsqueeze(0)}
+        out = rl_module.forward_inference(fwd_in)
+        dist_cls = rl_module.get_inference_action_dist_cls()
+        return dist_cls.from_logits(out["action_dist_inputs"]).sample()[0].numpy()
 
 
 class CustomZombieDetectorFunction(Callable):
@@ -56,14 +56,8 @@ class CustomZombieDetectorFunction(Callable):
         self.model.eval()
 
     def __call__(self, observation, *args, **kwargs):
-        """Returns a matrix of shape (nb_zombies, nb_attributes), where
-        the attributes are defining a rectangle with (x,y,width,height) and
-        indicate where the zombies are. The zombies are ordered from most
-        likely to least likely positions. The evaluation uses the first k
-        items if there are k zombies on the screen.
-        """
+
         if observation.ndim == 1:
-            # flat (H*W*3,) uint8 — reshape assuming 16:9 and 3 channels
             n_pixels = observation.size // 3
             orig_h = int((n_pixels * 9 / 16) ** 0.5)
             orig_w = n_pixels // orig_h
@@ -78,4 +72,4 @@ class CustomZombieDetectorFunction(Callable):
         if len(boxes) > 0:
             boxes[:, 2] = _ZOMBIE_W_NORM * orig_w
             boxes[:, 3] = _ZOMBIE_H_NORM * orig_h
-        return boxes  # (k, 4) array: [x, y, w, h] sorted by confidence
+        return boxes

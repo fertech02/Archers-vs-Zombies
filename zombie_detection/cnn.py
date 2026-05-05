@@ -1,30 +1,12 @@
-"""
-Shared CNN backbone for zombie detection and RL feature extraction.
-
-Architecture (YOLO-tiny detection head):
-  backbone (Conv + BN layers) → spatial feature map (64, gh, gw)
-                                              ├─ 1×1 conv → (5, gh, gw) → reshape (gh·gw, 5)
-                                              │             per-cell (conf, x, y, w, h) in [0, 1]
-                                              └─ flatten + fc → 512-dim feature vector (RL)
-
-Each grid cell is responsible for predicting a zombie whose top-left corner
-falls within that cell. This grounds localization in spatial position rather
-than slot index, which is what makes the previous fixed-slot head collapse to
-positional priors.
-"""
 import torch
 import torch.nn as nn
 
-MAX_ZOMBIES = 8  # kept for dataset.py target-tensor shape
-
+MAX_ZOMBIES = 8
 
 class ZombieCNN(nn.Module):
 
     def __init__(self, input_shape: tuple = (3, 90, 160)):
-        """
-        Args:
-            input_shape: (C, H, W) of the preprocessed input frame.
-        """
+
         super().__init__()
         C, H, W = input_shape
 
@@ -47,13 +29,11 @@ class ZombieCNN(nn.Module):
         )
         self.feat_size = 512
 
-        # YOLO-tiny detection head: small refinement conv + 1×1 to (5, gh, gw)
         self.detection_head = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
             nn.Conv2d(64, 5, kernel_size=1),
         )
 
-        # Cached grid offsets (registered as buffers so they move with .to(device))
         gy = torch.arange(self.grid_h).view(1, 1, self.grid_h, 1).float()
         gx = torch.arange(self.grid_w).view(1, 1, 1, self.grid_w).float()
         self.register_buffer("_gy", gy, persistent=False)

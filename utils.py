@@ -56,8 +56,9 @@ def create_environment(
     # Handle agent termination
     env = ss.black_death_v3(env)
 
-
-
+    # Frame stacking lungo l'asse canali: (H, W, 3) -> (H, W, 3*N)
+    if frame_stack is not None and frame_stack > 1:
+        env = ss.frame_stack_v2(env, stack_size=frame_stack)
 
     logger.info(
         f"Created KAZ environment with {num_agents} agents and max {max_zombies} zombies. "

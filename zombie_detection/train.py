@@ -1,18 +1,3 @@
-"""
-Train ZombieCNN on the collected zombie_dataset.
-
-Fixed-slot detection loss:
-  - Slot k is always matched to GT zombie k (ordering fixed by the dataset).
-  - BCE loss for confidence, smooth-L1 loss for bounding-box regression.
-  - Positive slots weighted by LAMBDA_CONF_POS.
-  - Data augmentation: random horizontal flip + color jitter.
-  - Cosine LR schedule + gradient clipping.
-
-Usage:
-    python -m zombie_detection.train
-or:
-    python zombie_detection/train.py
-"""
 import os
 import sys
 
@@ -28,55 +13,156 @@ from collect_dataset import load_dataset
 from zombie_detection.cnn import ZombieCNN
 from zombie_detection.dataset import ZombieDataset
 
-SAVE_PATH = os.path.join(os.path.dirname(__file__), "zombie_cnn.pth")
-
-# Loss hyper-parameters
-# Dataset: ~2.4 zombies / 8 slots → 70% negative slots.
-# Zombie boxes are ~2% of frame width when normalized → smooth_l1 gradients are
-# tiny. LAMBDA_BBOX=50 compensates; bbox head uses raw linear (no sigmoid) to
-# keep gradients full-scale.
-LAMBDA_BBOX     = 50.0  # high weight needed for tiny normalized box targets (~0.02)
-LAMBDA_CONF_POS = 5.0   # up-weight positive slots: ~70/30 negative/positive ratio
+SAVE_PATH       = os.path.join(os.path.dirname(__file__), "zombie_cnn.pth")
+LAMBDA_BBOX     = 50.0   # bbox regression weight (positive cells only)
+LAMBDA_OBJ      = 5.0    # confidence loss weight on cells with a zombie
+LAMBDA_NOOBJ    = 0.5    # confidence loss weight on empty cells (most cells)
 
 
-# ── Fixed-slot detection loss ─────────────────────────────────────────────────
+# ── YOLO-style detection loss ─────────────────────────────────────────────────
 
-def detection_loss(
-    preds: torch.Tensor,
-    targets: torch.Tensor,
-) -> torch.Tensor:
+def _build_cell_targets(targets: torch.Tensor, gh: int, gw: int):
     """
-    preds  : (B, MAX_ZOMBIES, 5)
-    targets: (B, MAX_ZOMBIES, 5)  slot k: conf=1 if real zombie, 0 if empty
+    Map fixed-slot targets into a per-cell target tensor.
 
-    Slot k in preds is compared directly to slot k in targets.
-    Confidence: weighted BCE.
-    Bbox: smooth-L1 on positive slots only.
+    Args:
+        targets : (B, MAX_ZOMBIES, 5) [conf, x, y, w, h] in [0,1]; conf=1 if real zombie
+        gh, gw  : grid dimensions
+
+    Returns:
+        cell_targets : (B, gh*gw, 5)  — populated only for cells containing a zombie
+        cell_mask    : (B, gh*gw) bool — True where a zombie's top-left falls in that cell
+
+    Note: if two zombies fall in the same cell the second is silently dropped (rare in KAZ).
     """
-    conf_pred = preds[:, :, 0]                  # (B, MAX_ZOMBIES)
-    conf_gt   = targets[:, :, 0]
-    bbox_pred = preds[:, :, 1:]                 # (B, MAX_ZOMBIES, 4)
-    bbox_gt   = targets[:, :, 1:]
+    B = targets.shape[0]
+    device = targets.device
+    N = gh * gw
 
-    pos_mask = conf_gt > 0.5                    # (B, MAX_ZOMBIES)
+    cell_targets = torch.zeros(B, N, 5, device=device)
+    cell_mask    = torch.zeros(B, N, dtype=torch.bool, device=device)
 
-    # ── confidence loss (BCE) ─────────────────────────────────────────────────
-    conf_pred_c = conf_pred.clamp(1e-6, 1.0 - 1e-6)
-    bce_all = F.binary_cross_entropy(conf_pred_c, conf_gt, reduction="none")
+    conf = targets[..., 0]
+    x    = targets[..., 1].clamp(0.0, 1.0 - 1e-6)
+    y    = targets[..., 2].clamp(0.0, 1.0 - 1e-6)
+    w    = targets[..., 3]
+    h    = targets[..., 4]
 
-    weight = torch.ones_like(bce_all)
-    weight[pos_mask] = LAMBDA_CONF_POS
-    conf_loss = (bce_all * weight).mean()
+    valid = conf > 0.5
+    if not valid.any():
+        return cell_targets, cell_mask
 
-    # ── bbox loss (smooth-L1 on positive slots only) ──────────────────────────
-    if pos_mask.any():
+    gx_idx = (x * gw).long().clamp(0, gw - 1)
+    gy_idx = (y * gh).long().clamp(0, gh - 1)
+    cell_idx = gy_idx * gw + gx_idx
+
+    b_idx = torch.arange(B, device=device).unsqueeze(1).expand_as(cell_idx)
+
+    flat_b    = b_idx[valid]
+    flat_cell = cell_idx[valid]
+
+    cell_targets[flat_b, flat_cell, 0] = 1.0
+    cell_targets[flat_b, flat_cell, 1] = x[valid]
+    cell_targets[flat_b, flat_cell, 2] = y[valid]
+    cell_targets[flat_b, flat_cell, 3] = w[valid]
+    cell_targets[flat_b, flat_cell, 4] = h[valid]
+    cell_mask[flat_b, flat_cell] = True
+
+    return cell_targets, cell_mask
+
+
+def detection_loss(preds: torch.Tensor, targets: torch.Tensor, gh: int, gw: int) -> torch.Tensor:
+    """
+    preds  : (B, gh*gw, 5) — model output, sigmoid-bounded
+    targets: (B, MAX_ZOMBIES, 5) — fixed-slot ground truth from ZombieDataset
+    """
+    cell_targets, cell_mask = _build_cell_targets(targets, gh, gw)
+
+    conf_pred = preds[..., 0].clamp(1e-6, 1.0 - 1e-6)
+    bce = F.binary_cross_entropy(conf_pred, cell_targets[..., 0], reduction="none")
+
+    if cell_mask.any():
+        obj_loss   = bce[cell_mask].mean()
+        noobj_loss = bce[~cell_mask].mean()
+    else:
+        obj_loss   = torch.tensor(0.0, device=preds.device)
+        noobj_loss = bce.mean()
+    conf_loss = LAMBDA_OBJ * obj_loss + LAMBDA_NOOBJ * noobj_loss
+
+    if cell_mask.any():
         bbox_loss = F.smooth_l1_loss(
-            bbox_pred[pos_mask], bbox_gt[pos_mask], reduction="mean"
+            preds[..., 1:][cell_mask],
+            cell_targets[..., 1:][cell_mask],
+            reduction="mean",
         ) * LAMBDA_BBOX
     else:
         bbox_loss = torch.tensor(0.0, device=preds.device)
 
     return conf_loss + bbox_loss
+
+
+# ── IoU-based validation metrics ──────────────────────────────────────────────
+
+def _iou_matrix(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """IoU between sets of [x,y,w,h] boxes. a:(N,4) b:(M,4) → (N,M)."""
+    if a.numel() == 0 or b.numel() == 0:
+        return torch.zeros(a.shape[0], b.shape[0], device=a.device)
+    a = a.unsqueeze(1)
+    b = b.unsqueeze(0)
+    ax1, ay1, aw, ah = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
+    bx1, by1, bw, bh = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+    inter_w = (torch.min(ax1 + aw, bx1 + bw) - torch.max(ax1, bx1)).clamp(min=0)
+    inter_h = (torch.min(ay1 + ah, by1 + bh) - torch.max(ay1, by1)).clamp(min=0)
+    inter = inter_w * inter_h
+    union = aw * ah + bw * bh - inter
+    return torch.where(union > 0, inter / union, torch.zeros_like(inter))
+
+
+def detection_metrics(
+    preds: torch.Tensor,
+    targets: torch.Tensor,
+    conf_thr: float = 0.5,
+    iou_thr: float = 0.5,
+):
+    """
+    Greedy IoU matching per image.
+    Returns (tp, fp, fn, sum_iou_of_matches, n_matches).
+    """
+    B = preds.shape[0]
+    tp = fp = fn = 0
+    sum_iou = 0.0
+    n_match = 0
+
+    for i in range(B):
+        p = preds[i]
+        t = targets[i]
+        p_keep = p[:, 0] >= conf_thr
+        t_keep = t[:, 0] > 0.5
+        p_box = p[p_keep, 1:]
+        t_box = t[t_keep, 1:]
+        if p_keep.any():
+            order = torch.argsort(-p[p_keep, 0])
+            p_box = p_box[order]
+
+        if len(t_box) == 0:
+            fp += int(len(p_box)); continue
+        if len(p_box) == 0:
+            fn += int(len(t_box)); continue
+
+        ious = _iou_matrix(p_box, t_box)               # (Np, Nt)
+        matched = torch.zeros(t_box.shape[0], dtype=torch.bool, device=p.device)
+        for j in range(p_box.shape[0]):
+            avail = ious[j].clone()
+            avail[matched] = -1.0
+            best_iou, best_idx = avail.max(0)
+            if best_iou.item() >= iou_thr:
+                tp += 1; matched[best_idx] = True
+                sum_iou += best_iou.item(); n_match += 1
+            else:
+                fp += 1
+        fn += int((~matched).sum().item())
+
+    return tp, fp, fn, sum_iou, n_match
 
 
 # ── augmentation helpers ──────────────────────────────────────────────────────
@@ -92,7 +178,6 @@ def augment_batch(
     """
     B = frames.shape[0]
 
-    # horizontal flip with 50% probability per sample
     flip_mask = torch.rand(B) < 0.5
     if flip_mask.any():
         frames[flip_mask] = torch.flip(frames[flip_mask], dims=[-1])
@@ -105,15 +190,12 @@ def augment_batch(
         )
         targets[flip_mask] = tgt_flipped
 
-    # mild color jitter: random brightness + contrast
-    brightness    = 1.0 + (torch.rand(B, 1, 1, 1, device=frames.device) - 0.5) * 0.3
+    brightness     = 1.0 + (torch.rand(B, 1, 1, 1, device=frames.device) - 0.5) * 0.3
     contrast_shift = (torch.rand(B, 1, 1, 1, device=frames.device) - 0.5) * 0.15
     frames = (frames * brightness + contrast_shift).clamp(0.0, 1.0)
 
     return frames, targets
 
-
-# ── training loop ─────────────────────────────────────────────────────────────
 
 def train(
     epochs: int = 20,
@@ -142,9 +224,10 @@ def train(
     val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=0)
 
     model     = ZombieCNN(input_shape=(3, 90, 160)).to(device)
+    gh, gw    = model.grid_h, model.grid_w
+    print(f"Detection grid: {gh}×{gw} = {gh*gw} cells")
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
-    # cosine LR with linear warmup
     def lr_lambda(ep):
         if ep < warmup_epochs:
             return (ep + 1) / warmup_epochs
@@ -166,7 +249,7 @@ def train(
             frames_b, targets_b = augment_batch(frames_b, targets_b)
 
             preds = model(frames_b)
-            loss  = detection_loss(preds, targets_b)
+            loss  = detection_loss(preds, targets_b, gh, gw)
 
             if torch.isnan(loss) or torch.isinf(loss):
                 optimizer.zero_grad()
@@ -182,28 +265,27 @@ def train(
         # validation
         model.eval()
         val_loss = 0.0
-        val_tp = val_fp = val_fn = 0
+        v_tp = v_fp = v_fn = 0
+        v_iou_sum = 0.0; v_iou_n = 0
         with torch.no_grad():
             for frames_b, targets_b in val_loader:
                 frames_b  = frames_b.to(device)
                 targets_b = targets_b.to(device)
                 preds     = model(frames_b)
-                val_loss += detection_loss(preds, targets_b).item()
+                val_loss += detection_loss(preds, targets_b, gh, gw).item()
 
-                # slot-level confidence accuracy (threshold 0.5)
-                conf_pred = (preds[:, :, 0] >= 0.5)
-                conf_gt   = (targets_b[:, :, 0] > 0.5)
-                val_tp += (conf_pred &  conf_gt).sum().item()
-                val_fp += (conf_pred & ~conf_gt).sum().item()
-                val_fn += (~conf_pred & conf_gt).sum().item()
+                tp, fp, fn, iou_s, iou_n = detection_metrics(preds, targets_b)
+                v_tp += tp; v_fp += fp; v_fn += fn
+                v_iou_sum += iou_s; v_iou_n += iou_n
 
         train_loss /= max(1, n_valid)
         val_loss   /= len(val_loader)
         scheduler.step()
 
-        prec = val_tp / (val_tp + val_fp) if (val_tp + val_fp) > 0 else 0.0
-        rec  = val_tp / (val_tp + val_fn) if (val_tp + val_fn) > 0 else 0.0
+        prec = v_tp / (v_tp + v_fp) if (v_tp + v_fp) > 0 else 0.0
+        rec  = v_tp / (v_tp + v_fn) if (v_tp + v_fn) > 0 else 0.0
         f1   = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+        miou = v_iou_sum / v_iou_n if v_iou_n > 0 else 0.0
 
         cur_lr = optimizer.param_groups[0]["lr"]
         saved  = ""
@@ -215,7 +297,7 @@ def train(
         print(
             f"Epoch {epoch:3d}/{epochs}  lr={cur_lr:.2e}  "
             f"train={train_loss:.4f}  val={val_loss:.4f}  "
-            f"P={prec:.2f} R={rec:.2f} F1={f1:.2f}{saved}"
+            f"P={prec:.2f} R={rec:.2f} F1={f1:.2f} mIoU={miou:.2f}{saved}"
         )
 
     print(f"\nDone. Best val loss: {best_val:.4f}  |  Weights: {save_path}")

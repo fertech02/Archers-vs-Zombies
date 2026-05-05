@@ -13,6 +13,13 @@ from zombie_detection.preprocessing import decode_detections, preprocess_obs
 
 _MODEL_PATH = os.path.join(os.path.dirname(__file__), "zombie_detection", "zombie_cnn.pth")
 
+# Every zombie sprite in the training set has the exact same rect size
+# (7.25 x 7.75 px in 320x180 frames). The CNN learns positions well but the
+# bbox-size head underfits, so we override w,h with these constants — this is
+# the size of an actual sprite rect, not a learned prediction.
+_ZOMBIE_W_NORM = 7.25 / 320
+_ZOMBIE_H_NORM = 7.75 / 180
+
 
 class CustomWrapper(BaseWrapper):
     """
@@ -68,4 +75,7 @@ class CustomZombieDetectorFunction(Callable):
             preds = self.model(tensor)
 
         boxes = decode_detections(preds, conf_threshold=0.5, orig_w=orig_w, orig_h=orig_h)
+        if len(boxes) > 0:
+            boxes[:, 2] = _ZOMBIE_W_NORM * orig_w
+            boxes[:, 3] = _ZOMBIE_H_NORM * orig_h
         return boxes  # (k, 4) array: [x, y, w, h] sorted by confidence

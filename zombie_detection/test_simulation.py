@@ -1,3 +1,4 @@
+
 """
 Simulation test for ZombieCNN detection.
 
@@ -172,7 +173,7 @@ def run_simulation(
         print("  Run `python -m zombie_detection.train` first.")
         return
 
-    model = ZombieCNN(input_shape=(3, 84, 84)).to(device)
+    model = ZombieCNN().to(device)
     model.load_state_dict(torch.load(WEIGHTS_PATH, map_location=device))
     model.eval()
     print(f"Loaded weights from {WEIGHTS_PATH}")

@@ -1,10 +1,3 @@
-"""
-Collect (frame, zombie_bboxes) pairs by running random agents
-and reading zombie positions directly from the game state.
-
-Frames are resized before saving (frame_size) and flushed to disk
-every save_every episodes so RAM stays bounded.
-"""
 import os
 import pickle
 import numpy as np

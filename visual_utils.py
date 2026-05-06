@@ -64,10 +64,6 @@ def heat_haze_warp_transform(amplitude_px=4.0, wavelength_px=90.0, prob=1.0):
 
     return transform
 
-
-
-
-
 def add_clouds_transform(
     intensity: float = 0.35,      # overall opacity multiplier
     coverage: float = 0.35,       # 0..1: how much of the screen becomes cloudy

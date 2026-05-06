@@ -46,15 +46,12 @@ class KAZVisionModel(TorchModelV2, nn.Module):
         return self
 
     def forward(self, input_dict, state, seq_lens):
-        # input obs: (B, H, W, 3*N) con N = frame_stack, layout [F0_RGB, F1_RGB, ...]
+
         obs = input_dict["obs"].float() / 255.0
         B, H, W, C = obs.shape
         N = self._frame_stack
         assert C == 3 * N, f"expected {3*N} channels with frame_stack={N}, got {C}"
 
-        # (B, H, W, 3*N) -> (B, 3*N, H, W) -> (B*N, 3, H, W): ogni frame diventa un'immagine
-        # indipendente nel batch. La reshape funziona perché i 3 canali RGB di ciascun frame
-        # sono contigui lungo l'asse canali.
         obs = obs.permute(0, 3, 1, 2).contiguous().reshape(B * N, 3, H, W)
         obs = nn.functional.interpolate(
             obs, size=CNN_INPUT_SIZE, mode="bilinear", align_corners=False
@@ -66,8 +63,7 @@ class KAZVisionModel(TorchModelV2, nn.Module):
         else:
             feats = self.cnn.extract_features(obs)
 
-        # concatena le feature dei N frame: (B*N, 512) -> (B, N*512)
-        self._features = feats.reshape(B, N * self.cnn.feat_size)
+        self._features = feats.reshape(B, N * self.cnn.feseat_size)
         return self.policy_head(self._features), state
 
     def value_function(self):

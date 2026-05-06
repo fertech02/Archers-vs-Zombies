@@ -8,6 +8,6 @@ SuperSuit
 dm_tree
 lz4
 gputil
-stable-baselines3
+stable-baselines3==2.0.0
 matplotlib
 pillow

@@ -5,8 +5,8 @@ from PIL import Image
 
 from zombie_detection.cnn import MAX_ZOMBIES
 
-DATASET_FRAME_WH = (320, 180)
-CNN_INPUT_SIZE = (90, 160)
+DATASET_FRAME_WH = (320, 180) # size frames were saved at by collect_dataset (WIDTH HEIGHT)
+CNN_INPUT_SIZE = (90, 160)   # size the CNN actually expects (HEIGHT WIDTH )
 
 
 class ZombieDataset(Dataset):

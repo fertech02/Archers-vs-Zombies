@@ -50,34 +50,42 @@ def load_dataset(save_dir="zombie_dataset"):
 
 
 def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
-            frame_size=(320, 180), save_every=10, distortion_level=5):
+            frame_size=(320, 180), save_every=10, distortion_level=None):
     """
     frame_size       : (width, height) to resize frames — reduces per-frame memory 16x
                        vs the native 1280x720.
     save_every       : flush a chunk to disk every N episodes to keep RAM bounded.
-    distortion_level : visual distortion applied during collection (match eval default=5).
+    distortion_level : None for random levels (0-5) per episode, or an int to force a specific level.
     """
     os.makedirs(save_dir, exist_ok=True)
     frames_buf, labels_buf = [], []
     chunk_idx = 0
     total_frames = 0
-
-    env = create_environment(
-        max_cycles=max_steps,
-        render_mode="rgb_array",
-        distortion_level=distortion_level,
-    )
-
-    first_agent = env.possible_agents[0]
+    
+    # Initialize env outside the loop to prevent reference errors
+    env = None
 
     for ep in range(n_episodes):
+        # ALWAYS close the previous environment to prevent memory leaks
+        if env is not None:
+            env.close()
+
+        # Randomize the distortion level if not explicitly provided
+        level = np.random.randint(0, 6) if distortion_level is None else distortion_level
+
+        env = create_environment(
+            max_cycles=max_steps,
+            render_mode="rgb_array",
+            distortion_level=level,
+        )
+
         env.reset(seed=ep)
+        first_agent = env.possible_agents[0]
 
         for agent in env.agent_iter():
             obs, reward, term, trunc, info = env.last()
             done = term or trunc
-            env.step(None if done else env.action_space(agent).sample())
-
+            env.step(None if done else 0)
             if agent == first_agent:
                 raw = env.render()                              # (H, W, 3) uint8
                 frame = np.array(
@@ -91,7 +99,7 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
 
         if (ep + 1) % save_every == 0:
             _save_chunk(save_dir, chunk_idx, frames_buf, labels_buf)
-            print(f"Episode {ep+1}/{n_episodes}  —  {total_frames} frames collected")
+            print(f"Episode {ep+1}/{n_episodes} (Level {level}) — {total_frames} frames collected")
             frames_buf, labels_buf = [], []
             chunk_idx += 1
 
@@ -99,7 +107,10 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
         _save_chunk(save_dir, chunk_idx, frames_buf, labels_buf)
         chunk_idx += 1
 
-    env.close()
+    # Catch the final closure after the loop finishes
+    if env is not None:
+        env.close()
+        
     print(f"Saved {total_frames} frames across {chunk_idx} chunk file(s) in {save_dir}/")
 
 

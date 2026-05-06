@@ -321,7 +321,7 @@ clouds_tf = add_clouds_transform(
     intensity=1,
     coverage=0.30,
     scale=40,
-    blur_passes=10,
+    blur_passes=2,
     tint=(240, 240, 245),
     seed_static=False,   # clouds stay consistent over time
 )
@@ -371,7 +371,7 @@ class VisualWrapper(BaseWrapper):
       - Wrapper exposes render_mode="human" outward and renders once per full cycle.
     """
 
-    def __init__(self, env, caption="KAZ (Transformed)"):
+    def __init__(self, env, caption="KAZ (Transformed)", render_mode="human"):
         super().__init__(env)
         self.transform = minimal_tf
         self.caption = caption
@@ -380,7 +380,7 @@ class VisualWrapper(BaseWrapper):
         self._rng = getattr(env, "np_random", None) or np.random.default_rng()
 
         # wrapper owns the window
-        self.render_mode = "human"
+        self.render_mode = render_mode
         self.env.render_mode = "rgb_array"
 
         self._pg_inited = False
@@ -411,16 +411,15 @@ class VisualWrapper(BaseWrapper):
         return out
 
     def step(self, action):
-        # Match KAZ cadence: render only once per full cycle
         selector = getattr(self.env, "_agent_selector", None)
         was_last = bool(selector.is_last()) if selector is not None else True
 
         out = self.env.step(action)
 
-        self._refresh_transformed_frame(force=True)
-        if self.render_mode == "human" and was_last:
-            # After last agent, env has drawn the new frame into env.screen
-            self._show()
+        if was_last:
+            self._refresh_transformed_frame(force=True)
+            if self.render_mode == "human":
+                self._show()
         return out
 
 

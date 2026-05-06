@@ -50,8 +50,7 @@ def create_environment(
 
     # Apply visual observation wrapper
     set_distortion_level(level=distortion_level)
-    env = VisualWrapper(env)
-    env.render_mode = render_mode
+    env = VisualWrapper(env, render_mode=render_mode)
 
     # Handle agent termination
     env = ss.black_death_v3(env)

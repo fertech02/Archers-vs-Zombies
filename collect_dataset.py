@@ -13,7 +13,7 @@ def get_zombie_boxes(env):
     for z in game.zombie_list:
         r = z.rect
         boxes.append([r.x, r.y, r.width, r.height])
-    boxes.sort(key=lambda b: b[0])
+    boxes.sort(key=lambda b : b[0])
     return np.array(boxes, dtype=np.float32).reshape(-1, 4)
 
 

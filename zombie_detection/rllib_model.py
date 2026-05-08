@@ -63,7 +63,7 @@ class KAZVisionModel(TorchModelV2, nn.Module):
         else:
             feats = self.cnn.extract_features(obs)
 
-        self._features = feats.reshape(B, N * self.cnn.feseat_size)
+        self._features = feats.reshape(B, N * self.cnn.feat_size)
         return self.policy_head(self._features), state
 
     def value_function(self):

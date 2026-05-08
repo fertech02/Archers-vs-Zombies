@@ -20,14 +20,17 @@ class ZombieCNN(nn.Module):
         with torch.no_grad():
             feat = self.backbone(torch.zeros(1, C, H, W))
             self.grid_h, self.grid_w = int(feat.shape[2]), int(feat.shape[3])
-            _flat = feat.flatten(1).shape[1]
+            _channels = int(feat.shape[1])
 
+        # Global Average Pooling collapses (C, gh, gw) → (C,) preserving translation
+        # invariance and shrinking the FC from ~7.9M to ~16K parameters.
+        self.gap = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
-            nn.Linear(_flat, 512),
+            nn.Linear(_channels, 256),
             nn.ReLU(),
             nn.Dropout(0.3),
         )
-        self.feat_size = 512
+        self.feat_size = 256
 
         self.detection_head = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
@@ -41,11 +44,13 @@ class ZombieCNN(nn.Module):
 
     def extract_features(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Returns the 512-dim feature vector used by the RL agent.
+        Returns the 256-dim feature vector used by the RL agent.
         Input:  (B, C, H, W) float32 in [0, 1]
-        Output: (B, 512)
+        Output: (B, 256)
         """
-        return self.fc(self.backbone(x).flatten(1))
+        feat = self.backbone(x)              # (B, 64, gh, gw)
+        pooled = self.gap(feat).flatten(1)   # (B, 64)
+        return self.fc(pooled)               # (B, 256)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

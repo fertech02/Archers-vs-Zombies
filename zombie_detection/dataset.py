@@ -33,16 +33,3 @@ class ZombieDataset(Dataset):
 
         H_out, W_out = self.input_size
         img = Image.fromarray(frame).resize((W_out, H_out), Image.BILINEAR)
-        frame_t = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
-
-        orig_W, orig_H = self.frame_wh
-        target = np.zeros((MAX_ZOMBIES, 5), dtype=np.float32)
-        k = min(len(boxes), MAX_ZOMBIES)
-        if k > 0:
-            target[:k, 0] = 1.0
-            target[:k, 1] = boxes[:k, 0] / orig_W
-            target[:k, 2] = boxes[:k, 1] / orig_H
-            target[:k, 3] = boxes[:k, 2] / orig_W
-            target[:k, 4] = boxes[:k, 3] / orig_H
-
-        return frame_t, torch.from_numpy(target)

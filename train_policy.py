@@ -25,6 +25,7 @@ from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from pettingzoo.utils import aec_to_parallel
+from ray.tune import CLIReporter
 
 from utils import create_environment
 from zombie_detection.rllib_model import KAZVisionModel
@@ -55,10 +56,13 @@ def make_env():
 
 
 def main():
+    # 1 su Colab/A100, 0 su macchine senza GPU (override via env var USE_GPU=1)
+    use_gpu = int(os.environ.get("USE_GPU", "0"))
+
     ray.init(
-        num_gpus=1,    # tell Ray about the A100
+        num_gpus=use_gpu,
         ignore_reinit_error=True,
-        object_store_memory=20_000_000_000,  # limit object store to 2GB
+        object_store_memory=20_000_000_00,  # limit object store to 2GB
         runtime_env={
             "working_dir": HERE,
             "excludes": ["results", ".git", "__pycache__",
@@ -102,7 +106,7 @@ def main():
             },
         )
         .resources(
-            num_gpus=1,                  # A100 for policy updates
+            num_gpus=use_gpu,            # A100 if available, else CPU-only
             num_cpus_for_main_process=1,
         )
         .framework("torch")
@@ -113,10 +117,11 @@ def main():
         name="kaz_ppo_v2",
         config=config.to_dict(),
         stop={"training_iteration": 300},
-        checkpoint_freq=25,
+        checkpoint_freq=5,
         checkpoint_at_end=True,
         storage_path=RESULTS_DIR,
-        verbose=1,
+        progress_reporter=reporter,
+        verbose=2,
     )
 
     """tune.run(
@@ -133,6 +138,19 @@ def main():
     """
     ray.shutdown()
 
+reporter = CLIReporter(
+    metric_columns={
+        "training_iteration": "training_iteration",
+        "episode_reward_mean": "rew_mean",
+        "episode_reward_min": "rew_min",
+        "episode_reward_max": "rew_max",
+        "episode_len_mean": "episode_len_mean",
+        "info/learner/default_policy/learner_stats/policy_loss" : "pi_loss",
+        "info/learner/default_policy/learner_stats/entropy" : "entropy",
+        "info/learner/default_policy/learner_stats/kl" : "kl",
+    },
+    max_report_frequency=10,
+)
 
 if __name__ == "__main__":
     main()

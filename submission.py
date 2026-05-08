@@ -1,3 +1,4 @@
+"""Template of your submission file for Task 3 (multi agent KAZ)."""
 import os
 from pathlib import Path
 from typing import Callable
@@ -14,57 +15,61 @@ from zombie_detection.rllib_model import KAZVisionModel
 
 _HERE = Path(os.path.dirname(os.path.abspath(__file__)))
 _MODEL_PATH = _HERE / "zombie_detection" / "zombie_cnn.pth"
-_CHECKPOINT_ROOT = _HERE / "results" / "ppo_kaz" / "kaz_ppo"
+_CLEAN_WEIGHTS_PATH = _HERE / "clean_kaz_weights.pth"
 
 _ZOMBIE_W_NORM = 7.25 / 320
 _ZOMBIE_H_NORM = 7.75 / 180
 
-# Tells the evaluation harness how to build the env.
+# Tells the evaluation harness how to build the env
 ENV_SETTINGS = {
     "frame_stack": 4,
-    "distortion_level": 5,
+    "distortion_level": 0,
 }
-
-
-def _find_latest_checkpoint() -> Path:
-    candidates = sorted(
-        _CHECKPOINT_ROOT.glob("PPO_kaz_*/checkpoint_*"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not candidates:
-        raise FileNotFoundError(f"No PPO checkpoint under {_CHECKPOINT_ROOT}")
-    return candidates[0].resolve()
-
 
 class CustomWrapper(BaseWrapper):
     """Identity wrapper — env_settings already give the obs shape the policy expects."""
-
     def observation_space(self, agent: AgentID) -> gymnasium.spaces.Space:
         return self.env.observation_space(agent)
 
     def observe(self, agent: AgentID) -> ObsType | None:
         return self.env.observe(agent)
 
-
 class CustomPredictFunction(Callable):
-    """Loads the trained PPO policy (old RLlib API stack) and predicts actions."""
+    """Loads the clean PyTorch weights and predicts actions."""
 
-    def __init__(self, env):
-        from ray.rllib.models import ModelCatalog
-        from ray.rllib.policy.policy import Policy
-
-        ModelCatalog.register_custom_model("kaz_vision", KAZVisionModel)
-
-        ckpt = _find_latest_checkpoint()
-        policy_dir = ckpt / "policies" / "default_policy"
-        loaded = Policy.from_checkpoint(str(policy_dir if policy_dir.is_dir() else ckpt))
-        self.policy = loaded["default_policy"] if isinstance(loaded, dict) else loaded
+    def __init__(self, env: gymnasium.Env):
+        agent_id = list(env.possible_agents)[0] if hasattr(env, "possible_agents") else "archer_0"
+        
+        # 1. Build the naked model architecture
+        self.model = KAZVisionModel(
+            obs_space=env.observation_space(agent_id),
+            action_space=env.action_space(agent_id),
+            num_outputs=env.action_space(agent_id).n,
+            model_config={"custom_model_config": {
+                "frame_stack": ENV_SETTINGS["frame_stack"],
+                "cnn_checkpoint": str(_MODEL_PATH),
+            }},
+            name="kaz_vision",
+        )
+        
+        # 2. Inject your newly extracted clean weights!
+        if _CLEAN_WEIGHTS_PATH.exists():
+            self.model.load_state_dict(torch.load(str(_CLEAN_WEIGHTS_PATH), map_location="cpu"), strict=False)
+            
+        # 3. Ensure the CNN is properly frozen
+        if _MODEL_PATH.exists():
+            self.model.cnn.load_state_dict(torch.load(str(_MODEL_PATH), map_location="cpu"))
+            for p in self.model.cnn.parameters():
+                p.requires_grad = False
+            self.model._cnn_frozen = True
+            
+        self.model.eval()
 
     def __call__(self, observation, agent, *args, **kwargs):
-        action, _, _ = self.policy.compute_single_action(observation, explore=False)
-        return action
-
+        obs_t = torch.FloatTensor(observation).unsqueeze(0)
+        with torch.no_grad():
+            logits, _ = self.model({"obs": obs_t}, [], None)
+        return int(torch.argmax(logits, dim=-1).item())
 
 class CustomZombieDetectorFunction(Callable):
     """Pretrained ZombieCNN detection head."""
@@ -83,8 +88,8 @@ class CustomZombieDetectorFunction(Callable):
             orig_w = n_pixels // orig_h
             observation = observation.reshape(orig_h, orig_w, 3)
         orig_h, orig_w = observation.shape[:2]
-        tensor = preprocess_obs(observation).to(self.device)
 
+        tensor = preprocess_obs(observation).to(self.device)
         with torch.no_grad():
             preds = self.model(tensor)
 

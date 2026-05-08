@@ -10,7 +10,7 @@ Changes vs teammate's baseline:
      → danger urgency, survival, zone coordination, zombie count pressure
   3. 300 iterations instead of 500
      → more experience for complex behaviors to emerge
-  4. Larger train_batch_size (4096) for A100
+  4. Larger train_batch_size (2048) for A100
      → more stable gradient updates per iteration
   5. num_env_runners set conservatively for Colab CPU count
      → GPU handles network updates, CPUs run environments
@@ -110,10 +110,10 @@ def main():
 
     tune.run(
         "PPO",
-        name="kaz_ppo",
+        name="kaz_ppo_v2",
         config=config.to_dict(),
         stop={"training_iteration": 300},
-        checkpoint_freq=50,
+        checkpoint_freq=25,
         checkpoint_at_end=True,
         storage_path=RESULTS_DIR,
         verbose=1,
@@ -129,8 +129,8 @@ def main():
         storage_path=RESULTS_DIR,
         resume=True,
         verbose=1,
-    )"""
-    
+    )
+    """
     ray.shutdown()
 
 

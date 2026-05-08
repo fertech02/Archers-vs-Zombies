@@ -46,7 +46,7 @@ def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> np.ndar
 
 def decode_detections(
     preds: torch.Tensor,
-    conf_threshold: float = 0.5,
+    conf_threshold: float = 0.6,
     iou_threshold: float = 0.4,
     orig_w: int = 1280,
     orig_h: int = 720,

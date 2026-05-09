@@ -3,76 +3,43 @@ import torch.nn as nn
 
 MAX_ZOMBIES = 8
 
+
 class ZombieCNN(nn.Module):
 
     def __init__(self, input_shape: tuple = (3, 90, 160)):
-
         super().__init__()
         C, H, W = input_shape
 
         self.backbone = nn.Sequential(
-            nn.Conv2d(C,  32, kernel_size=5, stride=2, padding=2), nn.BatchNorm2d(32), nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+            nn.Conv2d(C,  16, kernel_size=5, stride=2, padding=2), nn.BatchNorm2d(16), nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
+            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
         )
 
         with torch.no_grad():
             feat = self.backbone(torch.zeros(1, C, H, W))
             self.grid_h, self.grid_w = int(feat.shape[2]), int(feat.shape[3])
-            _channels = int(feat.shape[1])
 
-        # Global Average Pooling collapses (C, gh, gw) → (C,) preserving translation
-        # invariance and shrinking the FC from ~7.9M to ~16K parameters.
-        self.gap = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(_channels, 256),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-        )
-        self.feat_size = 256
-
-        self.detection_head = nn.Sequential(
-            nn.Conv2d(64, 64, kernel_size=3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
-            nn.Conv2d(64, 5, kernel_size=1),
-        )
+        self.detection_head = nn.Conv2d(32, 5, kernel_size=1)
 
         gy = torch.arange(self.grid_h).view(1, 1, self.grid_h, 1).float()
         gx = torch.arange(self.grid_w).view(1, 1, 1, self.grid_w).float()
         self.register_buffer("_gy", gy, persistent=False)
         self.register_buffer("_gx", gx, persistent=False)
 
-    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Returns the 256-dim feature vector used by the RL agent.
-        Input:  (B, C, H, W) float32 in [0, 1]
-        Output: (B, 256)
-        """
-        feat = self.backbone(x)              # (B, 64, gh, gw)
-        pooled = self.gap(feat).flatten(1)   # (B, 64)
-        return self.fc(pooled)               # (B, 256)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Returns per-cell zombie detection predictions.
-        Input:  (B, C, H, W) float32 in [0, 1]
-        Output: (B, gh·gw, 5)
-          dim 0 of last axis → confidence in [0, 1]
-          dim 1, 2           → (x, y) top-left corner normalized to [0, 1]
-          dim 3, 4           → (w, h) normalized to [0, 1]
-        """
-        feat = self.backbone(x)                       # (B, 64, gh, gw)
-        raw  = self.detection_head(feat)              # (B, 5, gh, gw)
+        feat = self.backbone(x)
+        raw  = self.detection_head(feat)
         B, _, gh, gw = raw.shape
 
-        conf = torch.sigmoid(raw[:, 0:1])             # (B, 1, gh, gw)
-        dx   = torch.sigmoid(raw[:, 1:2])             # offset within cell ∈ [0,1]
+        conf = torch.sigmoid(raw[:, 0:1])
+        dx   = torch.sigmoid(raw[:, 1:2])
         dy   = torch.sigmoid(raw[:, 2:3])
-        w    = torch.sigmoid(raw[:, 3:4])             # size ∈ [0,1]
+        w    = torch.sigmoid(raw[:, 3:4])
         h    = torch.sigmoid(raw[:, 4:5])
 
-        x_global = (self._gx + dx) / gw               # global top-left x ∈ [0,1]
+        x_global = (self._gx + dx) / gw
         y_global = (self._gy + dy) / gh
 
-        out = torch.cat([conf, x_global, y_global, w, h], dim=1)   # (B, 5, gh, gw)
+        out = torch.cat([conf, x_global, y_global, w, h], dim=1)
         return out.permute(0, 2, 3, 1).reshape(B, gh * gw, 5)

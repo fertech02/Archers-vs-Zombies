@@ -14,7 +14,7 @@ from zombie_detection.cnn import ZombieCNN
 from zombie_detection.dataset import ZombieDataset
 
 SAVE_PATH       = os.path.join(os.path.dirname(__file__), "zombie_cnn.pth")
-LAMBDA_BBOX     = 50.0   # bbox regression weight (positive cells only)
+LAMBDA_BBOX     = 5.0    # bbox regression weight (positive cells only)
 LAMBDA_OBJ      = 5.0    # confidence loss weight on cells with a zombie
 LAMBDA_NOOBJ    = 0.5    # confidence loss weight on empty cells (most cells)
 

@@ -1,5 +1,6 @@
 import os
 import pickle
+import random
 import numpy as np
 from PIL import Image
 
@@ -85,7 +86,7 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
         for agent in env.agent_iter():
             obs, reward, term, trunc, info = env.last()
             done = term or trunc
-            env.step(None if done else 0)
+            env.step(None if done else random.choice([1, 2, 3, 5]))
             if agent == first_agent:
                 raw = env.render()                              # (H, W, 3) uint8
                 frame = np.array(

@@ -317,7 +317,7 @@ clouds_tf = add_clouds_transform(
     intensity=1,
     coverage=0.30,
     scale=40,
-    blur_passes=2,
+    blur_passes=10,
     tint=(240, 240, 245),
     seed_static=False,   # clouds stay consistent over time
 )

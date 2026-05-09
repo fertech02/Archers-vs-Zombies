@@ -11,20 +11,20 @@ from pettingzoo.utils.env import AgentID, ObsType
 
 from zombie_detection.cnn import ZombieCNN
 from zombie_detection.preprocessing import decode_detections, preprocess_obs
-from zombie_detection.rllib_model import KAZVisionModel
+from zombie_detection.rllib_model import SimpleKAZModel
 
 _HERE = Path(os.path.dirname(os.path.abspath(__file__)))
-_MODEL_PATH = _HERE / "zombie_detection" / "zombie_cnn.pth"
-_CLEAN_WEIGHTS_PATH = _HERE / "clean_kaz_weights.pth"
+_MODEL_PATH  = _HERE / "zombie_detection" / "zombie_cnn.pth"
+_POLICY_PATH = _HERE / "policy.pth"
 
 _ZOMBIE_W_NORM = 7.25 / 320
 _ZOMBIE_H_NORM = 7.75 / 180
 
 # Tells the evaluation harness how to build the env
 ENV_SETTINGS = {
-    "frame_stack": 4,
     "distortion_level": 0,
 }
+
 
 class CustomWrapper(BaseWrapper):
     """Identity wrapper — env_settings already give the obs shape the policy expects."""
@@ -34,35 +34,28 @@ class CustomWrapper(BaseWrapper):
     def observe(self, agent: AgentID) -> ObsType | None:
         return self.env.observe(agent)
 
+
 class CustomPredictFunction(Callable):
-    """Loads the clean PyTorch weights and predicts actions."""
+    """Loads the trained PPO policy weights and predicts actions."""
 
     def __init__(self, env: gymnasium.Env):
         agent_id = list(env.possible_agents)[0] if hasattr(env, "possible_agents") else "archer_0"
-        
-        # 1. Build the naked model architecture
-        self.model = KAZVisionModel(
+
+        self.model = SimpleKAZModel(
             obs_space=env.observation_space(agent_id),
             action_space=env.action_space(agent_id),
             num_outputs=env.action_space(agent_id).n,
             model_config={"custom_model_config": {
-                "frame_stack": ENV_SETTINGS["frame_stack"],
                 "cnn_checkpoint": str(_MODEL_PATH),
             }},
-            name="kaz_vision",
+            name="kaz_simple",
         )
-        
-        # 2. Inject your newly extracted clean weights!
-        if _CLEAN_WEIGHTS_PATH.exists():
-            self.model.load_state_dict(torch.load(str(_CLEAN_WEIGHTS_PATH), map_location="cpu"), strict=False)
-            
-        # 3. Ensure the CNN is properly frozen
-        if _MODEL_PATH.exists():
-            self.model.cnn.load_state_dict(torch.load(str(_MODEL_PATH), map_location="cpu"))
-            for p in self.model.cnn.parameters():
-                p.requires_grad = False
-            self.model._cnn_frozen = True
-            
+
+        if _POLICY_PATH.exists():
+            self.model.load_state_dict(
+                torch.load(str(_POLICY_PATH), map_location="cpu"), strict=True
+            )
+
         self.model.eval()
 
     def __call__(self, observation, agent, *args, **kwargs):
@@ -70,6 +63,7 @@ class CustomPredictFunction(Callable):
         with torch.no_grad():
             logits, _ = self.model({"obs": obs_t}, [], None)
         return int(torch.argmax(logits, dim=-1).item())
+
 
 class CustomZombieDetectorFunction(Callable):
     """Pretrained ZombieCNN detection head."""
@@ -93,7 +87,7 @@ class CustomZombieDetectorFunction(Callable):
         with torch.no_grad():
             preds = self.model(tensor)
 
-        boxes = decode_detections(preds, conf_threshold=0.5, orig_w=orig_w, orig_h=orig_h)
+        boxes = decode_detections(preds, conf_threshold=0.7, orig_w=orig_w, orig_h=orig_h)
         if len(boxes) > 0:
             boxes[:, 2] = _ZOMBIE_W_NORM * orig_w
             boxes[:, 3] = _ZOMBIE_H_NORM * orig_h

@@ -101,7 +101,7 @@ class CustomPredictFunction(Callable):
         boxes = decode_detections(preds, conf_threshold=0.7, orig_w=orig_w, orig_h=orig_h)
         w = _ZOMBIE_W_NORM * orig_w
         h = _ZOMBIE_H_NORM * orig_h
-        zombie_positions = [(b[0] + w / 2, b[1] + h / 2) for b in boxes]
+        zombie_positions = [(b[0] + w / 2, b[1] + h / 2, w, h) for b in boxes]
 
         # Both archers from env.agent_list (allowed)
         try:

@@ -19,7 +19,7 @@ from pettingzoo.utils import BaseWrapper
 SCREEN_W = 1280
 SCREEN_H = 720
 MAX_ZOMBIES = 8
-VECTOR_DIM = 4 + 4 + MAX_ZOMBIES * 3   # self(4) + teammate(4) + zombies(24) = 32
+VECTOR_DIM = 4 + 4 + MAX_ZOMBIES * 5   # self(4) + teammate(4) + zombies(40) = 48
 
 
 def build_vector(my_archer, teammate_archer, zombie_positions):
@@ -29,10 +29,10 @@ def build_vector(my_archer, teammate_archer, zombie_positions):
     Layout:
       [0-3]   my archer (x_norm, y_norm, dir_x, dir_y)
       [4-7]   teammate  (x_norm, y_norm, dir_x, dir_y)
-      [8-10]  zombie 0  (x_norm, y_norm, present_flag)
-      [11-13] zombie 1
+      [8-12]  zombie 0  (x_norm, y_norm, w_norm, h_norm, present_flag)
+      [13-17] zombie 1
       ...
-      [29-31] zombie 7
+      [43-47] zombie 7
     """
     vec = np.zeros(VECTOR_DIM, dtype=np.float32)
 
@@ -52,10 +52,12 @@ def build_vector(my_archer, teammate_archer, zombie_positions):
     # Zombies sorted by y descending (most threatening first), top MAX_ZOMBIES
     sorted_z = sorted(zombie_positions, key=lambda z: -z[1])
     for i in range(min(len(sorted_z), MAX_ZOMBIES)):
-        zx, zy = sorted_z[i]
-        vec[8 + i * 3]     = zx / SCREEN_W
-        vec[8 + i * 3 + 1] = zy / SCREEN_H
-        vec[8 + i * 3 + 2] = 1.0
+        zx, zy, zw, zh = sorted_z[i]
+        vec[8 + i * 5]     = zx / SCREEN_W
+        vec[8 + i * 5 + 1] = zy / SCREEN_H
+        vec[8 + i * 5 + 2] = zw / SCREEN_W
+        vec[8 + i * 5 + 3] = zh / SCREEN_H
+        vec[8 + i * 5 + 4] = 1.0
 
     return np.clip(vec, -2.0, 2.0)
 
@@ -87,7 +89,8 @@ class VectorObsWrapper(BaseWrapper):
                     break
 
             zombie_positions = [
-                (z.rect.centerx, z.rect.centery) for z in game.zombie_list
+                (z.rect.centerx, z.rect.centery, z.rect.width, z.rect.height)
+                for z in game.zombie_list
             ]
             return build_vector(my_archer, teammate_archer, zombie_positions)
         except Exception:

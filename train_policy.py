@@ -37,7 +37,7 @@ def make_env():
         distortion_level=0,
         render_mode=None,
         max_cycles=2500,
-        max_zombies=8,
+        max_zombies=4,
     )
     aec = VectorObsWrapper(aec)         # pixels -> 32-dim vector (privileged training)
     aec = ShapedRewardWrapper(aec)      # training-only reward shaping

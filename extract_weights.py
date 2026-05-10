@@ -12,8 +12,8 @@ import torch
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.models import ModelCatalog
 
-from zombie_detection.rllib_model import SimpleKAZModel
-ModelCatalog.register_custom_model("kaz_simple", SimpleKAZModel)
+from vector_policy import VectorMLPPolicy
+ModelCatalog.register_custom_model("vector_mlp", VectorMLPPolicy)
 
 
 def main(ckpt_path: str):

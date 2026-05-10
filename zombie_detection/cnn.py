@@ -20,7 +20,10 @@ class ZombieCNN(nn.Module):
             feat = self.backbone(torch.zeros(1, C, H, W))
             self.grid_h, self.grid_w = int(feat.shape[2]), int(feat.shape[3])
 
-        self.detection_head = nn.Conv2d(32, 5, kernel_size=1)
+        self.detection_head = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, padding=1), nn.ReLU(),
+            nn.Conv2d(64, 5, kernel_size=1),
+        )
 
         gy = torch.arange(self.grid_h).view(1, 1, self.grid_h, 1).float()
         gx = torch.arange(self.grid_w).view(1, 1, 1, self.grid_w).float()

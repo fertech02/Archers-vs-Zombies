@@ -14,7 +14,7 @@ def get_zombie_boxes(env):
     for z in game.zombie_list:
         r = z.rect
         boxes.append([r.x, r.y, r.width, r.height])
-    boxes.sort(key=lambda b : b[0])
+    boxes.sort(key=lambda b: b[0])
     return np.array(boxes, dtype=np.float32).reshape(-1, 4)
 
 
@@ -62,16 +62,13 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
     frames_buf, labels_buf = [], []
     chunk_idx = 0
     total_frames = 0
-    
-    # Initialize env outside the loop to prevent reference errors
+
     env = None
 
     for ep in range(n_episodes):
-        # ALWAYS close the previous environment to prevent memory leaks
         if env is not None:
             env.close()
 
-        # Randomize the distortion level if not explicitly provided
         level = np.random.randint(0, 6) if distortion_level is None else distortion_level
 
         env = create_environment(
@@ -108,10 +105,9 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
         _save_chunk(save_dir, chunk_idx, frames_buf, labels_buf)
         chunk_idx += 1
 
-    # Catch the final closure after the loop finishes
     if env is not None:
         env.close()
-        
+
     print(f"Saved {total_frames} frames across {chunk_idx} chunk file(s) in {save_dir}/")
 
 

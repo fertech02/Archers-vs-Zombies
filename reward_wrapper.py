@@ -1,13 +1,25 @@
 """
 reward_wrapper.py
 -----------------
+Identity wrapper. Uses base PettingZoo KAZ reward (+1 kill, -1 death).
+"""
+from pettingzoo.utils import BaseWrapper
+
+
+class ShapedRewardWrapper(BaseWrapper):
+    """No-op wrapper. Base PettingZoo reward passes through unchanged."""
+    pass
+
+
+"""
+reward_wrapper.py
+-----------------
 Reward shaping for KAZ training only.
 Never used in submission/evaluation (tournament uses default PettingZoo rewards).
-"""
+
 import math
 from pettingzoo.utils import BaseWrapper
 
-SCREEN_W = 1280
 SCREEN_H = 720
 ATTACK_ACTION = 4
 
@@ -63,18 +75,8 @@ class ShapedRewardWrapper(BaseWrapper):
         total = 0.0
 
         if zombies:
-            # --- SECTORS OF FIRE ---
-            # archer_0 owns the left half, archer_1 owns the right half.
-            # If own zone is empty, help the other side.
-            if agent == "archer_0":
-                my_zone = [z for z in zombies if z.rect.centerx < SCREEN_W / 2]
-            else:
-                my_zone = [z for z in zombies if z.rect.centerx >= SCREEN_W / 2]
-
-            active_zombies = my_zone if my_zone else zombies
-
-            # Most dangerous zombie in active zone = lowest on screen (highest y)
-            target = max(active_zombies, key=lambda z: z.rect.y)
+            # Target the nearest zombie to this archer
+            target = min(zombies, key=lambda z: math.hypot(z.rect.centerx - my_x, z.rect.centery - my_y))
             tx = target.rect.centerx
             ty = target.rect.centery
 
@@ -86,7 +88,7 @@ class ShapedRewardWrapper(BaseWrapper):
                 # Dot product aiming: how well is the archer aimed at the target?
                 # 1.0 = perfect, 0.0 = 90deg off, -1.0 = facing away
                 aim = (hx * dx + hy * dy) / mag
-                total += 0.03 * max(0.0, aim)
+                total += 0.01 * max(0.0, aim)
 
                 # Attack bonus: reward firing when well-aimed
                 # Uses last_action because attacking flag resets before last() is called
@@ -94,7 +96,7 @@ class ShapedRewardWrapper(BaseWrapper):
                 if last_action == ATTACK_ACTION and aim > 0.7:
                     total += 0.05
 
-            # Urgency: small penalty as zombie approaches bottom
-            total -= 0.005 * (ty / SCREEN_H)
 
         return total
+
+"""

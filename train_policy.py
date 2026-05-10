@@ -1,14 +1,19 @@
 """
 train_policy.py
 ---------------
-Trains a PPO policy for the KAZ environment using RLlib.
+Trains a PPO MLP policy on the 32-dim KAZ feature vector.
 
-Architecture: SimpleKAZModel — Nature DQN CNN + MLP.
-No connection to the zombie detection CNN (kept fully separate).
-distortion_level=0 for fast training (no transforms).
+Pipeline:
+  KAZ (pixels) -> VectorObsWrapper (privileged 32-dim vector)
+                -> ShapedRewardWrapper (training-only reward shaping)
+                -> PPO + VectorMLPPolicy
+
+At submission time, the same 32-dim vector is built from CNN-detected zombies
+and env.agent_list (see submission.py).
 """
-
 import os
+os.environ["SDL_VIDEODRIVER"] = "dummy"  # headless Colab pygame fix
+
 import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -19,7 +24,8 @@ from pettingzoo.utils import aec_to_parallel
 from ray.tune import CLIReporter
 
 from utils import create_environment
-from zombie_detection.rllib_model import SimpleKAZModel
+from vector_obs_wrapper import VectorObsWrapper
+from vector_policy import VectorMLPPolicy
 from reward_wrapper import ShapedRewardWrapper
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "ppo_kaz")
@@ -31,18 +37,21 @@ def make_env():
         distortion_level=0,
         render_mode=None,
         max_cycles=2500,
+        max_zombies=8,
     )
-    aec = ShapedRewardWrapper(aec)
+    aec = VectorObsWrapper(aec)         # pixels -> 32-dim vector (privileged training)
+    aec = ShapedRewardWrapper(aec)      # training-only reward shaping
     return ParallelPettingZooEnv(aec_to_parallel(aec))
 
 
 def main():
-    use_gpu = int(os.environ.get("USE_GPU", "0"))
+    #HARDCODED
+    use_gpu = 1
 
     ray.init(
         num_gpus=use_gpu,
         ignore_reinit_error=True,
-        object_store_memory=2_000_000_000,
+        object_store_memory=4_000_000_000,
         runtime_env={
             "working_dir": HERE,
             "excludes": ["results", ".git", "__pycache__",
@@ -51,7 +60,7 @@ def main():
     )
 
     register_env("kaz", lambda _: make_env())
-    ModelCatalog.register_custom_model("kaz_simple", SimpleKAZModel)
+    ModelCatalog.register_custom_model("vector_mlp", VectorMLPPolicy)
 
     tmp_env = make_env()
     tmp_env.close()
@@ -67,18 +76,16 @@ def main():
             num_env_runners=4,
             num_envs_per_env_runner=1,
             rollout_fragment_length="auto",
-            sample_timeout_s=300,
+            sample_timeout_s=600,
         )
         .training(
-            train_batch_size=4000,
-            minibatch_size=256,
+            train_batch_size=10000,
+            minibatch_size=1000,
             num_epochs=4,
-            entropy_coeff=0.005,
+            entropy_coeff=0.01,
+            grad_clip=0.5,
             model={
-                "custom_model": "kaz_simple",
-                "custom_model_config": {
-                    "cnn_checkpoint": os.path.join(HERE, "zombie_detection", "zombie_cnn.pth"),
-                },
+                "custom_model": "vector_mlp",
             },
         )
         .resources(
@@ -90,10 +97,10 @@ def main():
 
     tune.run(
         "PPO",
-        name="kaz_ppo_v3",
+        name="kaz_ppo_vector",
         config=config.to_dict(),
-        stop={"training_iteration": 300},
-        checkpoint_freq=5,
+        stop={"training_iteration": 1000}, 
+        checkpoint_freq=25,
         checkpoint_at_end=True,
         storage_path=RESULTS_DIR,
         progress_reporter=reporter,

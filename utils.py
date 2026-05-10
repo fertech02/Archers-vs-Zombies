@@ -56,6 +56,10 @@ def create_environment(
     # Handle agent termination
     env = ss.black_death_v3(env)
 
+    # OOM FIX
+    #if resize_dim is not None:
+    #    env = ss.resize_v1(env, x_size=resize_dim[0], y_size=resize_dim[1])
+
     logger.info(
         f"Created KAZ environment with {num_agents} agents and max {max_zombies} zombies. "
         f"Observation type: {'visual' if visual_observation else 'vector'}"

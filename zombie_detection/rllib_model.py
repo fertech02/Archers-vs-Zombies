@@ -28,9 +28,15 @@ class SimpleKAZModel(TorchModelV2, nn.Module):
         if Path(cnn_path).exists():
             zombie_cnn.load_state_dict(torch.load(cnn_path, map_location="cpu"))
 
-        self.backbone = zombie_cnn.backbone  # 3 frozen conv layers → 32 channels
+        self.backbone = zombie_cnn.backbone  # frozen
         for p in self.backbone.parameters():
             p.requires_grad = False
+
+        # Trainable adapter: adapts detection features to policy-useful features (SpawnNet, Lin et al. 2023)
+        self.adapter = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, padding=1), nn.ReLU(),
+            nn.Conv2d(64, 32, kernel_size=3, padding=1), nn.ReLU(),
+        )
 
         self.pool = nn.AdaptiveAvgPool2d((3, 5))
 
@@ -51,7 +57,8 @@ class SimpleKAZModel(TorchModelV2, nn.Module):
         obs = obs.permute(0, 3, 1, 2)
         obs = F.interpolate(obs, size=(90, 160), mode="bilinear", align_corners=False)
         with torch.no_grad():
-            self._features = self.pool(self.backbone(obs)).flatten(1)  # (B, 32)
+            backbone_out = self.backbone(obs)
+        self._features = self.pool(self.adapter(backbone_out)).flatten(1)  # (B, 480)
         return self.policy_head(self._features), state
 
     def value_function(self):

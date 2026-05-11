@@ -129,7 +129,8 @@ class CustomPredictFunction(Callable):
         obs_t = torch.FloatTensor(vec).unsqueeze(0)
         with torch.no_grad():
             logits, _ = self.model({"obs": obs_t}, [], None)
-        return int(torch.argmax(logits, dim=-1).item())
+        dist = torch.distributions.Categorical(logits=logits)
+        return int(dist.sample().item())
 
 
 class CustomZombieDetectorFunction(Callable):
@@ -154,7 +155,7 @@ class CustomZombieDetectorFunction(Callable):
         with torch.no_grad():
             preds = self.model(tensor)
 
-        boxes = decode_detections(preds, conf_threshold=0.7, orig_w=orig_w, orig_h=orig_h)
+        boxes = decode_detections(preds, conf_threshold=0.6, orig_w=orig_w, orig_h=orig_h)
         if len(boxes) > 0:
             boxes[:, 2] = _ZOMBIE_W_NORM * orig_w
             boxes[:, 3] = _ZOMBIE_H_NORM * orig_h

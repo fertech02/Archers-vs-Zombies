@@ -5,14 +5,13 @@ Trains a PPO MLP policy on the 32-dim KAZ feature vector.
 
 Pipeline:
   KAZ (pixels) -> VectorObsWrapper (privileged 32-dim vector)
-                -> ShapedRewardWrapper (training-only reward shaping)
                 -> PPO + VectorMLPPolicy
 
 At submission time, the same 32-dim vector is built from CNN-detected zombies
 and env.agent_list (see submission.py).
 """
 import os
-os.environ["SDL_VIDEODRIVER"] = "dummy"  # headless Colab pygame fix
+os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 import ray
 import supersuit as ss
@@ -28,25 +27,23 @@ from ray.tune import CLIReporter
 from utils import create_environment
 from vector_obs_wrapper import VectorObsWrapper
 from vector_policy import VectorMLPPolicy
-from reward_wrapper import ShapedRewardWrapper
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "ppo_kaz")
 HERE        = os.path.dirname(os.path.abspath(__file__))
 
 
 def make_env():
-    os.environ["SDL_VIDEODRIVER"] = "dummy" 
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
     env = knights_archers_zombies_v10.env(
-            max_cycles=2500,
-            num_archers=2,
-            num_knights=0,
-            max_zombies=4,
-            vector_state=False,
-            render_mode=None,
+        max_cycles=2500,
+        num_archers=2,
+        num_knights=0,
+        max_zombies=4,
+        vector_state=False,
+        render_mode=None,
     )
     env = ss.black_death_v3(env)
     env = VectorObsWrapper(env)
-    env = ShapedRewardWrapper(env)
     return ParallelPettingZooEnv(aec_to_parallel(env))
 
 
@@ -88,7 +85,7 @@ def main():
             lr=3e-4,
             minibatch_size=1000,
             num_epochs=4,
-            entropy_coeff=0.05,
+            entropy_coeff=0.03,
             grad_clip=0.5,
             model={
                 "custom_model": "vector_mlp",
@@ -111,7 +108,6 @@ def main():
         storage_path=RESULTS_DIR,
         progress_reporter=reporter,
         verbose=2,
-        restore = "C:/Users/ferna/OneDrive/Desktop/ml-project-26/results/ppo_kaz/kaz_ppo_vector/PPO_kaz_62016_00000_0_2026-05-11_02-07-22/checkpoint_000017"
     )
 
     ray.shutdown()

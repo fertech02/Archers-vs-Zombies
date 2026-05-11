@@ -5,15 +5,22 @@ policy.pth (the file submission.py expects).
 Usage:
     python extract_weights.py path/to/checkpoint_XXXXXX
 """
+import os
 import sys
 from pathlib import Path
+
+os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 import torch
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.models import ModelCatalog
+from ray.tune.registry import register_env
 
 from vector_policy import VectorMLPPolicy
+from train_policy import make_env
+
 ModelCatalog.register_custom_model("vector_mlp", VectorMLPPolicy)
+register_env("kaz", lambda _: make_env())
 
 
 def main(ckpt_path: str):

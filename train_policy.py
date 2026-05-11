@@ -15,11 +15,13 @@ import os
 os.environ["SDL_VIDEODRIVER"] = "dummy"  # headless Colab pygame fix
 
 import ray
+import supersuit as ss
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
+from pettingzoo.butterfly import knights_archers_zombies_v10
 from pettingzoo.utils import aec_to_parallel
 from ray.tune import CLIReporter
 
@@ -33,25 +35,28 @@ HERE        = os.path.dirname(os.path.abspath(__file__))
 
 
 def make_env():
-    aec = create_environment(
-        distortion_level=0,
-        render_mode=None,
-        max_cycles=2500,
-        max_zombies=4,
+    os.environ["SDL_VIDEODRIVER"] = "dummy" 
+    env = knights_archers_zombies_v10.env(
+            max_cycles=2500,
+            num_archers=2,
+            num_knights=0,
+            max_zombies=4,
+            vector_state=False,
+            render_mode=None,
     )
-    aec = VectorObsWrapper(aec)         # pixels -> 32-dim vector (privileged training)
-    aec = ShapedRewardWrapper(aec)      # training-only reward shaping
-    return ParallelPettingZooEnv(aec_to_parallel(aec))
+    env = ss.black_death_v3(env)
+    env = VectorObsWrapper(env)
+    env = ShapedRewardWrapper(env)
+    return ParallelPettingZooEnv(aec_to_parallel(env))
 
 
 def main():
-    #HARDCODED
-    use_gpu = 1
+    use_gpu = 0
 
     ray.init(
         num_gpus=use_gpu,
         ignore_reinit_error=True,
-        object_store_memory=4_000_000_000,
+        object_store_memory=1_000_000_000,
         runtime_env={
             "working_dir": HERE,
             "excludes": ["results", ".git", "__pycache__",
@@ -80,9 +85,10 @@ def main():
         )
         .training(
             train_batch_size=10000,
+            lr=3e-4,
             minibatch_size=1000,
             num_epochs=4,
-            entropy_coeff=0.01,
+            entropy_coeff=0.05,
             grad_clip=0.5,
             model={
                 "custom_model": "vector_mlp",
@@ -100,11 +106,12 @@ def main():
         name="kaz_ppo_vector",
         config=config.to_dict(),
         stop={"training_iteration": 1000}, 
-        checkpoint_freq=25,
+        checkpoint_freq=10,
         checkpoint_at_end=True,
         storage_path=RESULTS_DIR,
         progress_reporter=reporter,
         verbose=2,
+        restore = "C:/Users/ferna/OneDrive/Desktop/ml-project-26/results/ppo_kaz/kaz_ppo_vector/PPO_kaz_62016_00000_0_2026-05-11_02-07-22/checkpoint_000017"
     )
 
     ray.shutdown()

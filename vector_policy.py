@@ -21,12 +21,12 @@ class VectorMLPPolicy(TorchModelV2, nn.Module):
         feat_dim = obs_space.shape[0]  # 32
 
         self.shared = nn.Sequential(
-            nn.Linear(feat_dim, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
+            nn.Linear(feat_dim, 128), nn.ReLU(),
+            nn.Linear(128, 128), nn.ReLU(),
         )
 
-        self.policy_head = nn.Linear(64, num_outputs)
-        self.value_head = nn.Linear(64, 1)
+        self.policy_head = nn.Linear(128, num_outputs)
+        self.value_head = nn.Linear(128, 1)
         self._features = None
 
     def forward(self, input_dict, state, seq_lens):

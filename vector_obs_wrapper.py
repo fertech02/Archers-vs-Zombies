@@ -1,7 +1,5 @@
 """
-vector_obs_wrapper.py
----------------------
-Training-time wrapper that converts pixel observations into a 32-dim feature
+Training-time wrapper that converts pixel observations into a 48-dim feature
 vector by reading game state directly from env.unwrapped.
 
 Authorized by professor's clarification:
@@ -19,21 +17,12 @@ from pettingzoo.utils import BaseWrapper
 SCREEN_W = 1280
 SCREEN_H = 720
 MAX_ZOMBIES = 8
-VECTOR_DIM = 4 + 4 + MAX_ZOMBIES * 5   # self(4) + teammate(4) + zombies(40) = 48
+# features: 4 (archer 0), 4 (archer 1), 40 (zombies)
+VECTOR_DIM = 4 + 4 + MAX_ZOMBIES * 5
 
 
 def build_vector(my_archer, teammate_archer, zombie_positions):
-    """
-    Construct the 32-dim observation vector.
 
-    Layout:
-      [0-3]   my archer (x_norm, y_norm, dir_x, dir_y)
-      [4-7]   teammate  (x_norm, y_norm, dir_x, dir_y)
-      [8-12]  zombie 0  (x_norm, y_norm, w_norm, h_norm, present_flag)
-      [13-17] zombie 1
-      ...
-      [43-47] zombie 7
-    """
     vec = np.zeros(VECTOR_DIM, dtype=np.float32)
 
     # Self state
@@ -57,8 +46,10 @@ def build_vector(my_archer, teammate_archer, zombie_positions):
         vec[8 + i * 5 + 1] = zy / SCREEN_H
         vec[8 + i * 5 + 2] = zw / SCREEN_W
         vec[8 + i * 5 + 3] = zh / SCREEN_H
+        # Presence flag: to distinguish between existing zombies and empty slots.
         vec[8 + i * 5 + 4] = 1.0
 
+    # Final clipping of vector values to [-2,2] for training stability
     return np.clip(vec, -2.0, 2.0)
 
 
@@ -68,6 +59,7 @@ class VectorObsWrapper(BaseWrapper):
     both archers from env.agent_list. Returns a 32-dim float32 vector.
     """
 
+    # Declare to PettingZoo the feature vector.
     def observation_space(self, agent):
         return spaces.Box(
             low=-2.0, high=2.0,

@@ -6,9 +6,7 @@ from pettingzoo.butterfly.knights_archers_zombies.src.zombie import Zombie
 from pettingzoo.butterfly.knights_archers_zombies import knights_archers_zombies as KAZEnvModule
 from gymnasium import spaces
 
-
 zombie_mask_prob = 0.2
-
 
 def photometric_jitter_transform(gamma_range=(0.8, 1.3), brightness=(0.9, 1.1), contrast=(0.9, 1.1), prob=1.0):
     def transform(frame_whc: np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -65,9 +63,9 @@ def heat_haze_warp_transform(amplitude_px=4.0, wavelength_px=90.0, prob=1.0):
     return transform
 
 def add_clouds_transform(
-    intensity: float = 0.35,      # overall opacity multiplier
-    coverage: float = 0.35,       # 0..1: how much of the screen becomes cloudy
-    scale: int = 32,              # larger => bigger blobs, smaller => more detailed
+    intensity: float = 0.35,
+    coverage: float = 0.35,
+    scale: int = 32,
     blur_passes: int = 2,         # softens edges
     tint=(235, 235, 235),         # cloud color
     prob: float = 1.0,            # apply sometimes

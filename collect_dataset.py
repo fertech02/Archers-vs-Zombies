@@ -18,7 +18,7 @@ def get_zombie_boxes(env):
     return np.array(boxes, dtype=np.float32).reshape(-1, 4)
 
 
-def _scale_boxes(boxes, orig_hw, new_wh):
+def scale_boxes(boxes, orig_hw, new_wh):
     """Scale [x, y, w, h] boxes from original pixel space to resized frame space."""
     if boxes.size == 0:
         return boxes
@@ -30,7 +30,7 @@ def _scale_boxes(boxes, orig_hw, new_wh):
     return scaled
 
 
-def _save_chunk(save_dir, chunk_idx, frames, labels):
+def save_chunk(save_dir, chunk_idx, frames, labels):
     tag = f"{chunk_idx:04d}"
     np.save(os.path.join(save_dir, f"frames_{tag}.npy"), np.array(frames, dtype=np.uint8))
     with open(os.path.join(save_dir, f"labels_{tag}.pkl"), "wb") as f:
@@ -46,6 +46,7 @@ def load_dataset(save_dir="zombie_dataset"):
     labels = []
     for f in label_files:
         with open(f, "rb") as fh:
+            # Python object serialization
             labels.extend(pickle.load(fh))
     return frames, labels
 
@@ -53,8 +54,7 @@ def load_dataset(save_dir="zombie_dataset"):
 def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
             frame_size=(320, 180), save_every=10, distortion_level=None):
     """
-    frame_size       : (width, height) to resize frames — reduces per-frame memory 16x
-                       vs the native 1280x720.
+    frame_size       : (width, height) to resize frames
     save_every       : flush a chunk to disk every N episodes to keep RAM bounded.
     distortion_level : None for random levels (0-5) per episode, or an int to force a specific level.
     """
@@ -77,32 +77,35 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
             distortion_level=level,
         )
 
+        # Change the seed for each episode
         env.reset(seed=ep)
         first_agent = env.possible_agents[0]
 
         for agent in env.agent_iter():
+            # Current state for the given agent
             obs, reward, term, trunc, info = env.last()
             done = term or trunc
+            # Choose a random action to perform by the agent
             env.step(None if done else random.choice([1, 2, 3, 5]))
             if agent == first_agent:
-                raw = env.render()                              # (H, W, 3) uint8
+                raw = env.render()
                 frame = np.array(
                     Image.fromarray(raw).resize(frame_size, Image.BILINEAR),
                     dtype=np.uint8,
                 )
-                boxes = _scale_boxes(get_zombie_boxes(env), raw.shape[:2], frame_size)
+                boxes = scale_boxes(get_zombie_boxes(env), raw.shape[:2], frame_size)
                 frames_buf.append(frame)
                 labels_buf.append(boxes)
                 total_frames += 1
 
         if (ep + 1) % save_every == 0:
-            _save_chunk(save_dir, chunk_idx, frames_buf, labels_buf)
+            save_chunk(save_dir, chunk_idx, frames_buf, labels_buf)
             print(f"Episode {ep+1}/{n_episodes} (Level {level}) — {total_frames} frames collected")
             frames_buf, labels_buf = [], []
             chunk_idx += 1
 
     if frames_buf:
-        _save_chunk(save_dir, chunk_idx, frames_buf, labels_buf)
+        save_chunk(save_dir, chunk_idx, frames_buf, labels_buf)
         chunk_idx += 1
 
     if env is not None:

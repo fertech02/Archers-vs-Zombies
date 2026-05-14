@@ -1,43 +1,37 @@
 """
-submission.py — Task 3 multi-agent KAZ submission.
-
 At submission time:
   1. observation arrives as pixels (per professor's mandate)
   2. CNN detects zombies from pixels -> bounding boxes
   3. archer state for both archers read from env.agent_list (explicitly allowed)
-  4. boxes + archer state -> 32-dim vector -> MLP policy -> action
+  4. boxes + archer state -> 48-dim vector -> MLP policy -> action
 
-The MLP was trained on a 32-dim vector built from privileged game state.
-Because the CNN scores 1.0 AP at the submission distortion level, the
-training and submission observation vectors are nearly identical.
+The MLP was trained on a 48-dim vector built from privileged game state.
 """
 import os
+import sys
 from pathlib import Path
 from typing import Callable
-
 import gymnasium
 import numpy as np
 import torch
+
 from gymnasium import spaces
 from pettingzoo.utils import BaseWrapper
 from pettingzoo.utils.env import AgentID, ObsType
-
 from zombie_detection.cnn import ZombieCNN
 from zombie_detection.preprocessing import decode_detections, preprocess_obs
 from vector_policy import VectorMLPPolicy
 from vector_obs_wrapper import build_vector, VECTOR_DIM
 
-_HERE = Path(os.path.dirname(os.path.abspath(__file__)))
-_MODEL_PATH  = _HERE / "zombie_detection" / "zombie_cnn.pth"
-_POLICY_PATH = _HERE / "policy.pth"
+HERE = Path(os.path.dirname(os.path.abspath(__file__)))
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 
-_ZOMBIE_W_NORM = 7.25 / 320
-_ZOMBIE_H_NORM = 7.75 / 180
+MODEL_PATH  = HERE / "zombie_detection" / "zombie_cnn.pth"
+POLICY_PATH = HERE / "policy.pth"
 
-ENV_SETTINGS = {
-    "distortion_level": 0,
-}
-
+ZOMBIE_W_NORM = 7.25 / 320
+ZOMBIE_H_NORM = 7.75 / 180
 
 class CustomWrapper(BaseWrapper):
     """Identity wrapper — CustomPredictFunction does the real work."""
@@ -49,19 +43,20 @@ class CustomWrapper(BaseWrapper):
 
 
 class CustomPredictFunction(Callable):
-    """
-    Pixels (observation arg) -> CNN -> 32-dim vector -> MLP -> action.
-    Both archers read from env.agent_list (explicitly allowed by professor).
-    """
 
+    """
+    Pixels (observation arg) -> CNN -> 48-dim vector -> MLP -> action.
+    """
     def __init__(self, env: gymnasium.Env):
         self.env = env
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # CNN for zombie detection (pixels -> boxes)
         self.cnn = ZombieCNN(input_shape=(3, 90, 160))
-        self.cnn.load_state_dict(torch.load(str(_MODEL_PATH), map_location=self.device))
+        # Load pre-trained weights
+        self.cnn.load_state_dict(torch.load(str(MODEL_PATH), map_location=self.device))
         self.cnn.to(self.device)
+        # Inference
         self.cnn.eval()
 
         # MLP policy
@@ -71,6 +66,7 @@ class CustomPredictFunction(Callable):
         agent_id = list(env.possible_agents)[0] if hasattr(env, "possible_agents") else "archer_0"
         action_space = env.action_space(agent_id)
 
+        # Init MLP
         self.model = VectorMLPPolicy(
             obs_space=vector_space,
             action_space=action_space,
@@ -79,14 +75,21 @@ class CustomPredictFunction(Callable):
             name="vector_mlp",
         )
 
-        if _POLICY_PATH.exists():
+        # Loads Policy weights
+        if POLICY_PATH.exists():
             self.model.load_state_dict(
-                torch.load(str(_POLICY_PATH), map_location="cpu"), strict=True
+                torch.load(str(POLICY_PATH), map_location="cpu"), strict=True
             )
+        # Inference
         self.model.eval()
 
+
     def __call__(self, observation, agent, *args, **kwargs):
-        # observation arrives as pixels (per professor's mandate)
+
+        """
+            Observations arrives as pixels -> return an int
+        """
+        # If observation is flat -> reconstruct dimensions
         if observation.ndim == 1:
             n_pixels = observation.size // 3
             orig_h = int((n_pixels * 9 / 16) ** 0.5)
@@ -99,8 +102,9 @@ class CustomPredictFunction(Callable):
         with torch.no_grad():
             preds = self.cnn(tensor)
         boxes = decode_detections(preds, conf_threshold=0.7, orig_w=orig_w, orig_h=orig_h)
-        w = _ZOMBIE_W_NORM * orig_w
-        h = _ZOMBIE_H_NORM * orig_h
+        w = ZOMBIE_W_NORM * orig_w
+        h = ZOMBIE_H_NORM * orig_h
+        # Gives the zombie position in the original space
         zombie_positions = [(b[0] + w / 2, b[1] + h / 2, w, h) for b in boxes]
 
         # Both archers from env.agent_list (allowed)
@@ -115,6 +119,10 @@ class CustomPredictFunction(Callable):
                     teammate_archer = other
                     break
         except Exception:
+            """
+                If we are not able to access the state, we build a vector
+                with direction (0.0, -1.0).
+            """
             class _Dummy:
                 class rect:
                     centerx = 640
@@ -126,24 +134,28 @@ class CustomPredictFunction(Callable):
         # Same build_vector function used during training
         vec = build_vector(my_archer, teammate_archer, zombie_positions)
 
+        # Build torch tensor
         obs_t = torch.FloatTensor(vec).unsqueeze(0)
         with torch.no_grad():
             logits, _ = self.model({"obs": obs_t}, [], None)
+
+        # Builds action probability distribution. Applies softmax internally.
         dist = torch.distributions.Categorical(logits=logits)
+        # Stochastic sampling, keeps exploration
         return int(dist.sample().item())
 
-
 class CustomZombieDetectorFunction(Callable):
-    """Pretrained ZombieCNN — unchanged. Used for Task 3 part 2 (detection eval)."""
 
     def __init__(self, env: gymnasium.Env):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = ZombieCNN(input_shape=(3, 90, 160))
-        self.model.load_state_dict(torch.load(str(_MODEL_PATH), map_location=self.device))
+        self.model.load_state_dict(torch.load(str(MODEL_PATH), map_location=self.device))
         self.model.to(self.device)
         self.model.eval()
 
     def __call__(self, observation, *args, **kwargs):
+
+        # If observation is flat -> reconstruct dimensions
         if observation.ndim == 1:
             n_pixels = observation.size // 3
             orig_h = int((n_pixels * 9 / 16) ** 0.5)
@@ -157,6 +169,6 @@ class CustomZombieDetectorFunction(Callable):
 
         boxes = decode_detections(preds, conf_threshold=0.6, orig_w=orig_w, orig_h=orig_h)
         if len(boxes) > 0:
-            boxes[:, 2] = _ZOMBIE_W_NORM * orig_w
-            boxes[:, 3] = _ZOMBIE_H_NORM * orig_h
+            boxes[:, 2] = ZOMBIE_W_NORM * orig_w
+            boxes[:, 3] = ZOMBIE_H_NORM * orig_h
         return boxes

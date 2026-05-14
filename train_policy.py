@@ -1,14 +1,12 @@
 """
-train_policy.py
----------------
-Trains a PPO MLP policy on the 32-dim KAZ feature vector.
+Trains a PPO MLP policy on the 48-dim KAZ feature vector.
 
 Pipeline:
-  KAZ (pixels) -> VectorObsWrapper (privileged 32-dim vector)
+  KAZ (pixels) -> VectorObsWrapper (privileged 48-dim vector)
                 -> PPO + VectorMLPPolicy
 
-At submission time, the same 32-dim vector is built from CNN-detected zombies
-and env.agent_list (see submission.py).
+At submission time, the same 48-dim vector is built from CNN-detected zombies
+and env.agent_list.
 """
 import os
 os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -23,8 +21,6 @@ from ray.tune.registry import register_env
 from pettingzoo.butterfly import knights_archers_zombies_v10
 from pettingzoo.utils import aec_to_parallel
 from ray.tune import CLIReporter
-
-from utils import create_environment
 from vector_obs_wrapper import VectorObsWrapper
 from vector_policy import VectorMLPPolicy
 

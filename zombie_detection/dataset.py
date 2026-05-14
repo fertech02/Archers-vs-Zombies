@@ -5,9 +5,8 @@ from PIL import Image
 
 from zombie_detection.cnn import MAX_ZOMBIES
 
-DATASET_FRAME_WH = (320, 180) # size frames were saved at by collect_dataset (WIDTH HEIGHT)
-CNN_INPUT_SIZE = (90, 160)   # size the CNN actually expects (HEIGHT WIDTH )
-
+DATASET_FRAME_WH = (320, 180) # size frames were saved at  (WIDTH HEIGHT) by collect_dataset
+CNN_INPUT_SIZE = (90, 160)   # size the CNN actually expects (HEIGHT WIDTH)
 
 class ZombieDataset(Dataset):
 
@@ -25,19 +24,27 @@ class ZombieDataset(Dataset):
         self.frame_wh = frame_wh
 
     def __len__(self) -> int:
+        # number of frames in the dataset
         return len(self.frames)
 
     def __getitem__(self, idx: int):
+        # to get (frame,boxes) to supervise the training
         frame = self.frames[idx]
         boxes = self.labels[idx]
 
         H_out, W_out = self.input_size
+        # resize the dataset fram to what cnn expects, Bilinear calculate the new pixel as
+        # a weighted average of the (2x2) nearby pixels.
         img = Image.fromarray(frame).resize((W_out, H_out), Image.BILINEAR)
+        # Transform to torch tensor, rearrange (C,H,W), normalize the tensor
         frame_t = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
 
         orig_W, orig_H = self.frame_wh
+        # For each zombie: (objectness, x, y, w, h)
         target = np.zeros((MAX_ZOMBIES, 5), dtype=np.float32)
         k = min(len(boxes), MAX_ZOMBIES)
+        # We normalize coordinates to make them resolution independent.
+        # The CNN learns relative values
         if k > 0:
             target[:k, 0] = 1.0
             target[:k, 1] = boxes[:k, 0] / orig_W

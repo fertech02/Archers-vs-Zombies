@@ -1,10 +1,3 @@
-"""
-Extract trained policy weights from a Ray RLlib checkpoint into
-policy.pth (the file submission.py expects).
-
-Usage:
-    python extract_weights.py path/to/checkpoint_XXXXXX
-"""
 import os
 import sys
 from pathlib import Path

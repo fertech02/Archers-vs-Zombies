@@ -11,6 +11,11 @@ import os
 import sys
 from pathlib import Path
 from typing import Callable
+
+HERE = Path(os.path.dirname(os.path.abspath(__file__)))
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
 import gymnasium
 import numpy as np
 import torch
@@ -22,10 +27,6 @@ from zombie_detection.cnn import ZombieCNN
 from zombie_detection.preprocessing import decode_detections, preprocess_obs
 from vector_policy import VectorMLPPolicy
 from vector_obs_wrapper import build_vector, VECTOR_DIM
-
-HERE = Path(os.path.dirname(os.path.abspath(__file__)))
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
 
 MODEL_PATH  = HERE / "zombie_detection" / "zombie_cnn.pth"
 POLICY_PATH = HERE / "policy.pth"

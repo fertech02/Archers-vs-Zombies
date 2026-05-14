@@ -28,7 +28,6 @@ def main(ckpt_path: str):
     torch.save(state_dict, str(out_path))
     print(f"Saved {len(state_dict)} tensors → {out_path}")
 
-
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python extract_weights.py <checkpoint_dir>")

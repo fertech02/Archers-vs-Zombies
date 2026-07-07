@@ -1,7 +1,7 @@
 
 # ML Project February 2026: Knights Archers Zombies
 
-This repository contains the code to setup the final evaluation of the course "[Machine Learning: Project](https://onderwijsaanbod.kuleuven.be/syllabi/e/H0T25AE.htm)" (KU Leuven, Faculty of Engineering, Department of Computer Science, [DTAI Section](https://dtai.cs.kuleuven.be)).
+This repository contains the project's code of the course "[Machine Learning: Project](https://onderwijsaanbod.kuleuven.be/syllabi/e/H0T25AE.htm)" (KU Leuven, Faculty of Engineering, Department of Computer Science, [DTAI Section](https://dtai.cs.kuleuven.be)). In the following code, we both train a cnn to perform zombie detection and a rl policy to maximize zombie kills.
 
 
 ## Local installation

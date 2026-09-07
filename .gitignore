@@ -13,6 +13,10 @@ __pycache__/
 dist/
 build/
 
+# Project Related
+pyproject.toml
+ssh.md
+
 # Jupyter
 .ipynb_checkpoints/
 

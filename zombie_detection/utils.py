@@ -4,18 +4,7 @@ from PIL import Image
 
 CNN_INPUT_SIZE = (90, 160)
 
-def preprocess_obs(obs: np.ndarray, input_size: tuple = CNN_INPUT_SIZE) -> torch.Tensor:
-
-    H, W = input_size
-    # Resize image into the cnn size and applies bilinear filter (weighted average foreach pixel of
-    # the nearby 2x2 pixels)
-    img = Image.fromarray(obs).resize((W, H), Image.BILINEAR)
-    # Transform it into a torch tensor, restore (C, H, W), normalize it
-    t = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
-    return t.unsqueeze(0)
-
-
-def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> np.ndarray:
+def nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> np.ndarray:
     """
         nms serves to remove duplicates when nearby cells see the same zombie
         and generates almost identical boxes.
@@ -86,6 +75,6 @@ def decode_detections(
     ], axis=1).astype(np.float32)
 
     # Applies nms to the boxes and keeps only the ones below the iou_threshold
-    keep = _nms(boxes, detected[:, 0], iou_threshold)
+    keep = nms(boxes, detected[:, 0], iou_threshold)
     return boxes[keep]
 

@@ -24,7 +24,7 @@ from gymnasium import spaces
 from pettingzoo.utils import BaseWrapper
 from pettingzoo.utils.env import AgentID, ObsType
 from zombie_detection.cnn import ZombieCNN
-from zombie_detection.preprocessing import decode_detections, preprocess_obs
+from zombie_detection.utils import decode_detections, preprocess_obs
 from vector_policy import VectorMLPPolicy
 from vector_obs_wrapper import build_vector, VECTOR_DIM
 

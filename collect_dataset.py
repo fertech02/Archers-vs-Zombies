@@ -6,7 +6,6 @@ from PIL import Image
 
 from utils import create_environment
 
-
 def get_zombie_boxes(env):
     """Extract zombie bounding boxes from the game's sprite list, sorted by x."""
     game = env.unwrapped
@@ -19,14 +18,13 @@ def get_zombie_boxes(env):
 
 
 def scale_boxes(boxes, orig_hw, new_wh):
-    """Scale [x, y, w, h] boxes from original pixel space to resized frame space."""
     if boxes.size == 0:
         return boxes
-    sx = new_wh[0] / orig_hw[1]   # orig_hw = (H, W)
+    sx = new_wh[0] / orig_hw[1]
     sy = new_wh[1] / orig_hw[0]
     scaled = boxes.copy()
-    scaled[:, [0, 2]] *= sx        # x, width
-    scaled[:, [1, 3]] *= sy        # y, height
+    scaled[:, [0, 2]] *= sx
+    scaled[:, [1, 3]] *= sy
     return scaled
 
 
@@ -37,24 +35,39 @@ def save_chunk(save_dir, chunk_idx, frames, labels):
         pickle.dump(labels, f)
 
 
-def load_dataset(save_dir="zombie_dataset"):
-    """Load all chunks and return (frames, labels) arrays."""
+def load_dataset(save_dir="zombie_dataset", return_chunks=False):
+    """
+    return chunks: also return, for each frame, the index of the chunk file it
+    came from. A chunk is a whole group of episodes.
+    """
     import glob
     frame_files = sorted(glob.glob(os.path.join(save_dir, "frames_*.npy")))
     label_files = sorted(glob.glob(os.path.join(save_dir, "labels_*.pkl")))
-    frames = np.concatenate([np.load(f) for f in frame_files], axis=0)
+
+    chunks = []
+    frame_arrays = []
+    for i, f in enumerate(frame_files):
+        arr = np.load(f)
+        frame_arrays.append(arr)
+        chunks.append(np.full(len(arr), i, dtype=np.int64))
+
+    frames = np.concatenate(frame_arrays, axis=0)
     labels = []
+
     for f in label_files:
         with open(f, "rb") as fh:
-            # Python object serialization
             labels.extend(pickle.load(fh))
+
+    if return_chunks:
+        return frames, labels, np.concatenate(chunks)
     return frames, labels
 
 
-def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
+def collect(n_episodes=300, max_steps=500, save_dir="zombie_dataset",
             frame_size=(320, 180), save_every=10, distortion_level=None):
     """
-    frame_size       : (width, height) to resize frames
+    max_steps        : episode length.
+    frame_size       : (width, height) to resize frames.
     save_every       : flush a chunk to disk every N episodes to keep RAM bounded.
     distortion_level : None for random levels (0-5) per episode, or an int to force a specific level.
     """
@@ -82,9 +95,11 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
         first_agent = env.possible_agents[0]
 
         for agent in env.agent_iter():
+
             # Current state for the given agent
             obs, reward, term, trunc, info = env.last()
             done = term or trunc
+
             # Choose a random action to perform by the agent
             env.step(None if done else random.choice([1, 2, 3, 5]))
             if agent == first_agent:
@@ -116,3 +131,4 @@ def collect(n_episodes=200, max_steps=300, save_dir="zombie_dataset",
 
 if __name__ == "__main__":
     collect()
+

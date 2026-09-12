@@ -14,15 +14,16 @@ from dynamics import build_2x2_vector_field
 
 
 # 2x2 plots
-
 def plot_2x2(game: MatrixGame, runs: list[dict], title: str,
              dynamics: str | None = None,
              dyn_kwargs: dict | None = None,
              time_average: bool = True,
              ax: plt.Axes | None = None) -> plt.Axes:
-    """Plot 12 time-averaged policy traces in the (x1, y1) unit square.
-    Optionally overlays the replicator-dynamics vector field as a quiver.
-    time_average=True shows cumulative-mean policy"""
+    """
+        Plot 12 time-averaged policy traces in the (x1, y1) unit square.
+        Optionally overlays the replicator-dynamics vector field as a quiver.
+        time_average=True shows cumulative-mean policy
+    """
     
     if ax is None:
         fig, ax = plt.subplots(figsize=(5.5, 5.5))
@@ -75,10 +76,11 @@ def plot_2x2(game: MatrixGame, runs: list[dict], title: str,
 
 
 # 3-action simplex plot (for Biased RPS)
-
 def _project_simplex(p: np.ndarray) -> np.ndarray:
-    """Project a length-3 probability vector to 2D coordinates
-    of an equilateral triangle: v0=(Rock), v1=(Paper), v2=(Scissors)."""
+    """
+        Project a length-3 probability vector to 2D coordinates
+        of an equilateral triangle: v0=(Rock), v1=(Paper), v2=(Scissors).
+    """
     v0 = np.array([0.0, 0.0])
     v1 = np.array([1.0, 0.0])
     v2 = np.array([0.5, np.sqrt(3.0) / 2.0])
@@ -89,8 +91,10 @@ def plot_simplex(game: MatrixGame, runs: list[dict], title: str,
                  player: str = "row",
                  time_average: bool = True,
                  ax: plt.Axes | None = None) -> plt.Axes:
-    """Plot policy traces on the 2-simplex triangle for a 3-action game.
-    Nash equilibria are marked with a red cross."""
+    """
+        Plot policy traces on the 2-simplex triangle for a 3-action game.
+        Nash equilibria are marked with a red cross.
+    """
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 6))
 

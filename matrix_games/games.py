@@ -1,7 +1,7 @@
 """
 Payoff matrices, Nash equilibria, and Pareto-optimal states (pre-computed, they were 
-derived analytically in the report section 2.1) 
-for the 4 matrix games: Stag Hunt, Subsidy Game, Prisoner's Dilemma, and 
+derived analytically in Report.pdf section 2.1)
+for the 4 matrix games: Stag Hunt, Subsidy Game, Prisoner's Dilemma and
 Biased Rock-Paper-Scissors.
 """
 
@@ -37,7 +37,7 @@ class MatrixGame:
 # S   1, 1    0, 2/3
 # H  2/3, 0   2/3, 2/3
 #
-# Pure NEs: (S,S) and (H,H). Mixed NE: each player plays S with probability 2/5 (see report).
+# Pure NEs: (S,S) and (H,H). Mixed NE: each player plays S with probability 2/5.
 # Pareto-optimal: (S,S) gives (1,1) which Pareto-dominates (H,H) at (2/3, 2/3).
 STAG_HUNT = MatrixGame(
     name="Stag Hunt",
@@ -101,7 +101,7 @@ PRISONERS_DILEMMA = MatrixGame(
 # S  -0.25   0.5      0
 #
 # This is a zero-sum game 
-# No pure NE. Unique mixed NE: (10/16, 5/16, 1/16). PO is degenerate. (see report)
+# No pure NE. Unique mixed NE: (10/16, 5/16, 1/16). PO is degenerate.
 A_BRPS = np.array([
     [ 0.00, -0.05,  0.25],
     [ 0.05,  0.00, -0.50],

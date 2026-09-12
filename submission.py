@@ -24,15 +24,16 @@ from gymnasium import spaces
 from pettingzoo.utils import BaseWrapper
 from pettingzoo.utils.env import AgentID, ObsType
 from zombie_detection.cnn import ZombieCNN
-from zombie_detection.utils import decode_detections, preprocess_obs
+from zombie_detection.utils import decode_detections, load_detector_config, preprocess_obs
 from vector_policy import VectorMLPPolicy
 from vector_obs_wrapper import build_vector, VECTOR_DIM
 
-MODEL_PATH  = HERE / "zombie_detection" / "zombie_cnn.pth"
-POLICY_PATH = HERE / "policy.pth"
+CNN_PATH  = HERE / "zombie_detection" / "zombie_cnn.pth"
+POLICY_PATH = HERE / "ppo_policy " / "policy.pth"
 
-ZOMBIE_W_NORM = 7.25 / 320
-ZOMBIE_H_NORM = 7.75 / 180
+# Confidence / NMS operating points picked on the validation split by
+# zombie_detection/train.py.
+DETECTOR_CFG = load_detector_config()
 
 class CustomWrapper(BaseWrapper):
     """Identity wrapper — CustomPredictFunction does the real work."""
@@ -53,11 +54,9 @@ class CustomPredictFunction(Callable):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # CNN for zombie detection (pixels -> boxes)
-        self.cnn = ZombieCNN(input_shape=(3, 90, 160))
-        # Load pre-trained weights
-        self.cnn.load_state_dict(torch.load(str(MODEL_PATH), map_location=self.device))
+        self.cnn = ZombieCNN()
+        self.cnn.load_state_dict(torch.load(str(CNN_PATH), map_location=self.device))
         self.cnn.to(self.device)
-        # Inference
         self.cnn.eval()
 
         # MLP policy
@@ -81,6 +80,7 @@ class CustomPredictFunction(Callable):
             self.model.load_state_dict(
                 torch.load(str(POLICY_PATH), map_location="cpu"), strict=True
             )
+
         # Inference
         self.model.eval()
 
@@ -90,7 +90,7 @@ class CustomPredictFunction(Callable):
         """
             Observations arrives as pixels -> return an int
         """
-        # If observation is flat -> reconstruct dimensions
+
         if observation.ndim == 1:
             n_pixels = observation.size // 3
             orig_h = int((n_pixels * 9 / 16) ** 0.5)
@@ -98,15 +98,22 @@ class CustomPredictFunction(Callable):
             observation = observation.reshape(orig_h, orig_w, 3)
         orig_h, orig_w = observation.shape[:2]
 
-        # CNN -> zombie boxes -> (x_center, y_center) tuples
         tensor = preprocess_obs(observation).to(self.device)
         with torch.no_grad():
             preds = self.cnn(tensor)
-        boxes = decode_detections(preds, conf_threshold=0.7, orig_w=orig_w, orig_h=orig_h)
-        w = ZOMBIE_W_NORM * orig_w
-        h = ZOMBIE_H_NORM * orig_h
-        # Gives the zombie position in the original space
-        zombie_positions = [(b[0] + w / 2, b[1] + h / 2, w, h) for b in boxes]
+
+        boxes = decode_detections(
+            preds,
+            conf_threshold=DETECTOR_CFG["conf_threshold_f1"],
+            iou_threshold=DETECTOR_CFG["nms_iou"],
+            orig_w=orig_w,
+            orig_h=orig_h,
+        )
+
+        # decode_detections returns top-left boxes; build_vector wants centres.
+        zombie_positions = [
+            (b[0] + b[2] / 2, b[1] + b[3] / 2, b[2], b[3]) for b in boxes
+        ]
 
         # Both archers from env.agent_list (allowed)
         try:
@@ -132,16 +139,14 @@ class CustomPredictFunction(Callable):
             my_archer = _Dummy()
             teammate_archer = None
 
-        # Same build_vector function used during training
         vec = build_vector(my_archer, teammate_archer, zombie_positions)
-
-        # Build torch tensor
         obs_t = torch.FloatTensor(vec).unsqueeze(0)
         with torch.no_grad():
             logits, _ = self.model({"obs": obs_t}, [], None)
 
         # Builds action probability distribution. Applies softmax internally.
         dist = torch.distributions.Categorical(logits=logits)
+
         # Stochastic sampling, keeps exploration
         return int(dist.sample().item())
 
@@ -149,14 +154,13 @@ class CustomZombieDetectorFunction(Callable):
 
     def __init__(self, env: gymnasium.Env):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = ZombieCNN(input_shape=(3, 90, 160))
-        self.model.load_state_dict(torch.load(str(MODEL_PATH), map_location=self.device))
+        self.model = ZombieCNN()
+        self.model.load_state_dict(torch.load(str(CNN_PATH), map_location=self.device))
         self.model.to(self.device)
         self.model.eval()
 
     def __call__(self, observation, *args, **kwargs):
 
-        # If observation is flat -> reconstruct dimensions
         if observation.ndim == 1:
             n_pixels = observation.size // 3
             orig_h = int((n_pixels * 9 / 16) ** 0.5)
@@ -168,8 +172,12 @@ class CustomZombieDetectorFunction(Callable):
         with torch.no_grad():
             preds = self.model(tensor)
 
-        boxes = decode_detections(preds, conf_threshold=0.6, orig_w=orig_w, orig_h=orig_h)
-        if len(boxes) > 0:
-            boxes[:, 2] = ZOMBIE_W_NORM * orig_w
-            boxes[:, 3] = ZOMBIE_H_NORM * orig_h
-        return boxes
+        # Recall-knee point: evaluate_zombies() scores found / n_ground_truth,
+        # so a missed zombie costs and a spurious box does not.
+        return decode_detections(
+            preds,
+            conf_threshold=DETECTOR_CFG["conf_threshold_recall"],
+            iou_threshold=DETECTOR_CFG["nms_iou"],
+            orig_w=orig_w,
+            orig_h=orig_h,
+        )

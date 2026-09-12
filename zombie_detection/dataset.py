@@ -4,9 +4,9 @@ from torch.utils.data import Dataset
 from PIL import Image
 
 from zombie_detection.cnn import MAX_ZOMBIES
+from zombie_detection.utils import CNN_INPUT_SIZE
 
 DATASET_FRAME_WH = (320, 180)
-CNN_INPUT_SIZE = (90, 160)
 
 class ZombieDataset(Dataset):
 
@@ -27,16 +27,20 @@ class ZombieDataset(Dataset):
         return len(self.frames)
 
     def __getitem__(self, idx: int):
-        # to get (frame,boxes) to supervise the training
         frame = self.frames[idx]
         boxes = self.labels[idx]
 
         H_out, W_out = self.input_size
-        img = Image.fromarray(frame).resize((W_out, H_out), Image.BILINEAR)
+        if frame.shape[:2] != (H_out, W_out):
+            frame = np.array(
+                Image.fromarray(frame).resize((W_out, H_out), Image.BILINEAR)
+            )
+
         # Transform to torch tensor, rearrange (C,H,W), normalize the tensor
-        frame_t = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
+        frame_t = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
 
         orig_W, orig_H = self.frame_wh
+
         # For each zombie: (objectness, x, y, w, h)
         target = np.zeros((MAX_ZOMBIES, 5), dtype=np.float32)
         k = min(len(boxes), MAX_ZOMBIES)

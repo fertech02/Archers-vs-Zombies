@@ -184,6 +184,7 @@ def add_random_stars_transform(
       - colored=False makes white/yellowish stars; True makes random pastel-ish colors.
       - prob lets you apply stars only sometimes (e.g., flicker effects).
     """
+
     n_stars = int(n_stars)
     size_min = int(size_min)
     size_max = int(size_max)

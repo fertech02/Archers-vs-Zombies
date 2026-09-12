@@ -1,7 +1,6 @@
 """
-Run all Task-2 experiments and save the figures.
+    Run all Matrix Games experiments and save the figures.
 """
-
 from __future__ import annotations
 import os
 import numpy as np
@@ -16,7 +15,6 @@ from dynamics import build_2x2_vector_field
 
 
 # Experiment configuration
-
 # Per-algorithm hyper-parameters.
 CONFIG = {
     "epsilon_greedy": dict(alpha=0.05, epsilon=0.1),
@@ -49,18 +47,18 @@ ALG_TITLES = {
 
 # Which dynamics to overlay for each algorithm.
 DYN_OVERLAY = {
-    "epsilon_greedy": None,
-    "boltzmann":      "boltzmann",
-    "lenient":        "lenient",
+    "epsilon_greedy":  None,
+    "boltzmann":       "boltzmann",
+    "lenient":         "lenient",
 }
 
 
 # Helper
-
 def run_one_game(game, fname_stem: str, outdir: str):
-    """Run all three algorithms on `game` and produce a 1x3 figure of policy
-    traces, plus a 1x2 figure of analytical vector fields for Boltzmann and
-    Lenient Boltzmann.
+    """
+        Run all three algorithms on `game` and produce a 1x3 figure of policy
+        traces, plus a 1x2 figure of analytical vector fields for Boltzmann and
+        Lenient Boltzmann.
     """
     print(f"\n=== {game.name} ===")
 
@@ -107,8 +105,9 @@ def run_one_game(game, fname_stem: str, outdir: str):
 
 
 def plot_pure_dynamics(outdir: str):
-    """Plot just the analytical vector fields for both
-    Boltzmann and Lenient Boltzmann dynamics on the three 2x2 games.
+    """
+        Plot just the analytical vector fields for both
+        Boltzmann and Lenient Boltzmann dynamics on the three 2x2 games.
     """
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     games_2x2 = [STAG_HUNT, SUBSIDY, PRISONERS_DILEMMA]
@@ -143,7 +142,6 @@ def plot_pure_dynamics(outdir: str):
 
 
 # Entry-point
-
 if __name__ == "__main__":
     outdir = "figures"
     os.makedirs(outdir, exist_ok=True)

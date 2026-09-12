@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# encoding: utf-8
 """
 Code used to load an agent and evaluate its performance.
 

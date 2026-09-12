@@ -11,15 +11,14 @@ All algorithms implement the same minimal interface:
     - policy() -> np.ndarray        : return the current policy as a probability  vector over actions
 
 All share the same stateless Q-update: Q(a) <- Q(a) + alpha * (r - Q(a))
-See report Section 2.2 for details and citations
+See Report.pdf Section 2.2 for details and citations.
 """
 
 from __future__ import annotations
 import numpy as np
 
 
-# ------- Base class
-
+# ------- Base class -------
 class QLearnerBase:
     """Tabular Q-learner for a stateless game with `n_actions` actions."""
 
@@ -41,11 +40,12 @@ class QLearnerBase:
         raise NotImplementedError
 
 
-# -------- (a) epsilon-greedy Q-learning
-
+# --------  epsilon-greedy Q-learning --------
 class EpsilonGreedyQLearner(QLearnerBase):
-    """Q-learner with epsilon-greedy action selection.
-    Plays argmax Q(a) with prob 1-eps, uniform random with prob eps.""" 
+    """
+        Q-learner with epsilon-greedy action selection.
+        Plays argmax Q(a) with prob 1-eps, uniform random with prob eps.
+    """
 
     def __init__(self, n_actions: int, alpha: float = 0.05,
                  epsilon: float = 0.1, q_init: float = 0.0,
@@ -69,11 +69,12 @@ class EpsilonGreedyQLearner(QLearnerBase):
         return pi
 
 
-# -------- (b) Boltzmann (softmax) Q-learning
-
+# --------  Boltzmann Q-learning --------
 class BoltzmannQLearner(QLearnerBase):
-    """Q-learner with Boltzmann (softmax) action selection.
-    pi(a) = exp(Q(a)/tau) / sum_b exp(Q(b)/tau). High tau = more exploration."""
+    """
+        Q-learner with Boltzmann (softmax) action selection.
+        pi(a) = exp(Q(a)/tau) / sum_b exp(Q(b)/tau). High tau = more exploration.
+    """
 
     def __init__(self, n_actions: int, alpha: float = 0.05,
                  temperature: float = 0.5, q_init: float = 0.0,
@@ -92,12 +93,13 @@ class BoltzmannQLearner(QLearnerBase):
         return int(self.rng.choice(self.n_actions, p=self.policy()))
 
 
-# -------- (c) Lenient Boltzmann Q-learning
-
+# --------  Lenient Boltzmann Q-learning --------
 class LenientBoltzmannQLearner(BoltzmannQLearner):
-    """Boltzmann Q-learner with kappa-reward buffer (Panait et al. 2008).
-    Q is updated with the max of the last kappa rewards, ignoring
-    miscoordination penalties caused by a still-exploring partner."""
+    """
+        Boltzmann Q-learner with kappa-reward buffer (Panait et al. 2008).
+        Q is updated with the max of the last kappa rewards, ignoring
+        miscoordination penalties caused by a still-exploring partner.
+    """
 
     def __init__(self, n_actions: int, alpha: float = 0.05,
                  temperature: float = 1.0, kappa: int = 5,

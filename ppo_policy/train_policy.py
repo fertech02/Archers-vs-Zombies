@@ -8,6 +8,7 @@ Pipeline:
 At submission time, the same 48-dim vector is built from CNN-detected zombies
 and env.agent_list.
 """
+
 import os
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 

@@ -10,6 +10,7 @@ At SUBMISSION time, the same vector format is constructed using:
   - CNN-detected zombies (from pixels — required by professor)
   - env.agent_list for archer state of BOTH archers (explicitly allowed)
 """
+
 import numpy as np
 from gymnasium import spaces
 from pettingzoo.utils import BaseWrapper
@@ -56,7 +57,7 @@ def build_vector(my_archer, teammate_archer, zombie_positions):
 class VectorObsWrapper(BaseWrapper):
     """
     Training-time wrapper. Reads zombies from env.zombie_list (privileged) and
-    both archers from env.agent_list. Returns a 32-dim float32 vector.
+    both archers from env.agent_list. Returns a 48-dim float32 vector.
     """
 
     # Declare to PettingZoo the feature vector.

@@ -1,15 +1,12 @@
 """
 Analytical replicator-dynamics vector fields for Boltzmann and Lenient
-Boltzmann Q-learning 
+Boltzmann Q-learning
 Used to overlay the theoretical flow on empirical trajectories.
 """
-
 from __future__ import annotations
 import numpy as np
 
-
-# (1) Standard Boltzmann replicator dynamics
-
+# Standard Boltzmann replicator dynamics
 def _entropy_term(x: np.ndarray) -> np.ndarray:
     """Return the vector  ln x_i - sum_k x_k ln x_k  (entrywise)."""
     x_safe = np.clip(x, 1e-12, 1.0)
@@ -22,8 +19,12 @@ def boltzmann_dynamics(x: np.ndarray, y: np.ndarray,
                        A: np.ndarray, B: np.ndarray,
                        alpha: float = 1.0, tau: float = 0.5
                        ) -> tuple[np.ndarray, np.ndarray]:
-    """Boltzmann replicator vector field (Tuyls et al. Equations 7 8; 
-    restated as Equation 10 in Bloembergen et al.)"""
+
+    """
+        Boltzmann replicator vector field (Tuyls et al. Equations 7 8;
+        restated as Equation 10 in Bloembergen et al.)
+    """
+
     # Row player payoff vector: (A y)_i  for i = 1..n_row.
     Ay = A @ y
     avg_x = x @ Ay
@@ -41,20 +42,20 @@ def boltzmann_dynamics(x: np.ndarray, y: np.ndarray,
     return dx, dy
 
 
-# (2) Lenient utility (Bloembergen et al. 2015, Eq. 11)
-
+# Lenient utility (Bloembergen et al. 2015, Eq. 11)
 def lenient_utility(player_payoff_matrix: np.ndarray,
                     opponent_strategy: np.ndarray,
                     kappa: int) -> np.ndarray:
-    """Compute the lenient expected utility u_i for each action i. 
-    u_i is the expected maximum payoff over kappa i.i.d. draws
-    from the opponent's strategy. 
+    """
+        Compute the lenient expected utility u_i for each action i.
+        u_i is the expected maximum payoff over kappa i.i.d. draws
+        from the opponent's strategy.
     """
     n_i, n_j = player_payoff_matrix.shape
     y = opponent_strategy
     u = np.zeros(n_i)
     for i in range(n_i):
-        row = player_payoff_matrix[i]                           # length n_j
+        row = player_payoff_matrix[i]
         total = 0.0
         for j in range(n_j):
             a_ij = row[j]
@@ -88,10 +89,12 @@ def lenient_boltzmann_dynamics(x: np.ndarray, y: np.ndarray,
     mutation_x = -alpha * x * _entropy_term(x)
     dx = selection_x + mutation_x
 
-    # For the column player we view its payoffs as a row player would, by
-    # transposing B (col-player's payoff for its own action j against
-    # opponent action i is B[i, j] so the matrix from the col player's POV
-    # is B.T of shape (n_col_actions, n_row_actions))
+    """
+      For the column player we view its payoffs as a row player would, by
+      transposing B (col-player's payoff for its own action j against
+      opponent action i is B[i, j] so the matrix from the col player's POV
+      is B.T of shape (n_col_actions, n_row_actions))
+    """
     w = lenient_utility(B.T, x, kappa)
     avg_y = y @ w
     selection_y = (alpha / tau) * y * (w - avg_y)
@@ -101,7 +104,6 @@ def lenient_boltzmann_dynamics(x: np.ndarray, y: np.ndarray,
 
 
 # Helpers to build a vector field on a 2D grid for 2-action games
-
 def build_2x2_vector_field(A: np.ndarray, B: np.ndarray,
                            grid_size: int = 21,
                            dynamics: str = "boltzmann",
@@ -109,8 +111,11 @@ def build_2x2_vector_field(A: np.ndarray, B: np.ndarray,
                            kappa: int = 5
                            ) -> tuple[np.ndarray, np.ndarray,
                                        np.ndarray, np.ndarray]:
-    """Evaluate the vector field on a grid_size x grid_size grid
-    in (x1, y1) in [0,1]^2. Returns (X, Y, U, V) ready for quiver."""
+
+    """
+        Evaluate the vector field on a grid_size x grid_size grid
+        in (x1, y1) in [0,1]^2. Returns (X, Y, U, V) ready for quiver.
+    """
     assert A.shape == (2, 2) and B.shape == (2, 2)
     xs = np.linspace(0.02, 0.98, grid_size)
     ys = np.linspace(0.02, 0.98, grid_size)
